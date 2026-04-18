@@ -2,3 +2,8 @@ name = "hhgveenendaal"
 main = "worker.js"
 compatibility_date = "2026-04-18"
 account_id = "8b41cf3007ede84c74a7b2fc75102c20"
+
+[[rules]]
+type = "Text"
+globs = ["**/*.html"]
+fallthrough = true

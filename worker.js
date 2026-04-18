@@ -1,7 +1,9 @@
+import html from "./index.html";
+
 export default {
     async fetch(request) {
-        return new Response("Hello from HHG Veenendaal Worker!", {
-            headers: { "Content-Type": "text/plain" },
+        return new Response(html, {
+            headers: { "Content-Type": "text/html; charset=utf-8" },
         });
     },
 };
