@@ -1,28 +1,338 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="nl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HHG Veenendaal</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 2rem;
-            background-color: pink;
-            color: #333;
+            font-size: 13px;
+            color: #4c4e4f;
+            background-color: #f5f3f2;
         }
-        h1 {
-            color: deeppink;
+
+        /* Header */
+        #header {
+            background-color: #004b58;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
         }
-        p {
+
+        #header h1 {
+            color: #ffffff;
+            font-size: 24px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        #header span {
+            color: #92aab0;
+            font-size: 13px;
+            display: block;
+            margin-top: 2px;
+        }
+
+        /* Navigation */
+        #nav {
+            background-color: #035765;
+            padding: 0 20px;
+        }
+
+        #nav ul {
+            list-style: none;
+            display: flex;
+            flex-wrap: wrap;
+        }
+
+        #nav ul li a {
+            display: block;
+            color: #ffffff;
+            text-decoration: none;
+            padding: 10px 14px;
+            font-size: 13px;
+            transition: background-color 0.2s;
+        }
+
+        #nav ul li a:hover {
+            background-color: #004b58;
+        }
+
+        /* Banner */
+        #banner {
+            background-color: #63858e;
+            height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #banner p {
+            color: #ffffff;
+            font-size: 22px;
+            font-style: italic;
+        }
+
+        /* Main content */
+        #wrapper {
+            max-width: 948px;
+            margin: 20px auto;
+            padding: 0 20px;
+            display: grid;
+            grid-template-columns: 233px 1fr;
+            gap: 16px;
+        }
+
+        /* Sidebar */
+        #sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .sidebar-block {
+            background-color: #ffffff;
+            border: 1px solid #dfe5e6;
+            border-radius: 6px;
+            box-shadow: 0 0 4px rgba(0,0,0,0.1);
+            padding: 12px;
+        }
+
+        .sidebar-block h3 {
+            color: #004b58;
+            font-size: 13px;
+            margin-bottom: 8px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #dfe5e6;
+        }
+
+        .sidebar-block ul {
+            list-style: none;
+        }
+
+        .sidebar-block ul li a {
+            color: #035765;
+            text-decoration: none;
+            font-size: 12px;
+            line-height: 22px;
+            display: block;
+        }
+
+        .sidebar-block ul li a:hover {
+            color: #004b58;
+            text-decoration: underline;
+        }
+
+        /* Content */
+        #content {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .content-block {
+            background-color: #ffffff;
+            border: 1px solid #dfe5e6;
+            border-radius: 6px;
+            box-shadow: 0 0 4px rgba(0,0,0,0.1);
+            padding: 16px 20px;
+        }
+
+        .content-block h2 {
+            color: #004b58;
+            font-size: 18px;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #dfe5e6;
+        }
+
+        .content-block p {
             line-height: 1.6;
+            color: #4c4e4f;
+            margin-bottom: 8px;
+        }
+
+        .news-item {
+            border-bottom: 1px solid #e4e8e9;
+            padding-bottom: 12px;
+            margin-bottom: 12px;
+        }
+
+        .news-item:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .news-item h3 {
+            color: #035765;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .news-item .date {
+            color: #92aab0;
+            font-size: 11px;
+            margin-bottom: 6px;
+        }
+
+        .read-more {
+            color: #035765;
+            font-size: 12px;
+            text-decoration: none;
+        }
+
+        .read-more:hover {
+            text-decoration: underline;
+        }
+
+        /* Footer */
+        #footer {
+            background-color: #004b58;
+            color: #92aab0;
+            margin-top: 30px;
+            padding: 20px;
+        }
+
+        #footer-inner {
+            max-width: 948px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+        }
+
+        #footer h4 {
+            color: #ffffff;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        #footer p, #footer a {
+            font-size: 12px;
+            line-height: 1.8;
+            color: #92aab0;
+            text-decoration: none;
+        }
+
+        #footer a:hover {
+            color: #ffffff;
+        }
+
+        #footer-bottom {
+            text-align: center;
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 1px solid #035765;
+            font-size: 11px;
+            color: #63858e;
+            max-width: 948px;
+            margin-left: auto;
+            margin-right: auto;
         }
     </style>
 </head>
 <body>
-    <h1>HHG Veenendaal</h1>
-    <p>Welcome to the HHG Veenendaal website.</p>
+
+    <div id="header">
+        <div>
+            <h1>HHG Veenendaal</h1>
+            <span>Hersteld Hervormde Gemeente Veenendaal</span>
+        </div>
+    </div>
+
+    <div id="nav">
+        <ul>
+            <li><a href="#">Welkom</a></li>
+            <li><a href="#">Geloof</a></li>
+            <li><a href="#">Kerkdiensten</a></li>
+            <li><a href="#">Live meekijken</a></li>
+            <li><a href="#">Gemeenteleven</a></li>
+            <li><a href="#">Kerkenraad</a></li>
+            <li><a href="#">Diaconaat</a></li>
+        </ul>
+    </div>
+
+    <div id="banner">
+        <p>"Uw Woord is een lamp voor mijn voet en een licht op mijn pad."</p>
+    </div>
+
+    <div id="wrapper">
+
+        <div id="sidebar">
+            <div class="sidebar-block">
+                <h3>Agenda</h3>
+                <ul>
+                    <li><a href="#">Zondag 10:00 – Morgendienst</a></li>
+                    <li><a href="#">Zondag 17:00 – Middagdienst</a></li>
+                    <li><a href="#">Woensdag 19:30 – Bijbelstudie</a></li>
+                </ul>
+            </div>
+            <div class="sidebar-block">
+                <h3>Links</h3>
+                <ul>
+                    <li><a href="#">HHK</a></li>
+                    <li><a href="#">Dagelijks Woord</a></li>
+                    <li><a href="#">Zien en Geloven</a></li>
+                    <li><a href="#">Over de Brug</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="content-block">
+                <h2>Welkom bij de HHG Veenendaal</h2>
+                <p>Van harte welkom op de website van de Hersteld Hervormde Gemeente te Veenendaal. Wij zijn een gemeente die leeft uit het Woord van God en de belijdenis van de Reformatie.</p>
+                <p>Op deze website vindt u informatie over onze gemeente, de kerkdiensten en het gemeenteleven.</p>
+            </div>
+
+            <div class="content-block">
+                <h2>Nieuws</h2>
+                <div class="news-item">
+                    <h3>Kerkdienst zondag</h3>
+                    <div class="date">18 april 2026</div>
+                    <p>De diensten op zondag beginnen om 10:00 en 17:00 uur. U bent van harte welkom.</p>
+                    <a href="#" class="read-more">Lees meer &rsaquo;</a>
+                </div>
+                <div class="news-item">
+                    <h3>Gemeenteavond</h3>
+                    <div class="date">15 april 2026</div>
+                    <p>Aanstaande woensdag is er een gemeenteavond in het kerkgebouw. Iedereen is welkom.</p>
+                    <a href="#" class="read-more">Lees meer &rsaquo;</a>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div id="footer">
+        <div id="footer-inner">
+            <div>
+                <h4>HHG Veenendaal</h4>
+                <p>Hersteld Hervormde Gemeente<br>Veenendaal</p>
+            </div>
+            <div>
+                <h4>Contact</h4>
+                <p>Scriba: <a href="#">scriba@hhgveenendaal.nl</a><br>
+                Redactie: <a href="#">webmaster@hhgveenendaal.nl</a></p>
+            </div>
+            <div>
+                <h4>Kerkdiensten</h4>
+                <p>Zondag 10:00 uur<br>Zondag 17:00 uur</p>
+            </div>
+        </div>
+        <div id="footer-bottom">
+            &copy; 2026 HHG Veenendaal
+        </div>
+    </div>
+
 </body>
 </html>
