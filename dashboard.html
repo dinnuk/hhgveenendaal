@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HHG Veenendaal – Declaraties</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -22,21 +23,9 @@
             align-items: center;
             justify-content: space-between;
         }
-
-        #header h1 {
-            color: #fff;
-            font-size: 16px;
-            font-weight: bold;
-        }
-
-        #header .subtitle {
-            color: #92aab0;
-            font-size: 12px;
-            margin-left: 10px;
-        }
-
+        #header h1 { color: #fff; font-size: 16px; font-weight: bold; }
+        #header .subtitle { color: #92aab0; font-size: 12px; margin-left: 10px; }
         .header-left { display: flex; align-items: baseline; gap: 8px; }
-
         #header button {
             background: transparent;
             border: 1px solid #63858e;
@@ -46,8 +35,24 @@
             cursor: pointer;
             font-size: 12px;
         }
-
         #header button:hover { background: #035765; color: #fff; }
+
+        /* Tabs */
+        #tabs {
+            background: #035765;
+            padding: 0 24px;
+            display: flex;
+            gap: 4px;
+        }
+        .tab {
+            padding: 10px 18px;
+            color: #92aab0;
+            cursor: pointer;
+            font-size: 13px;
+            border-bottom: 3px solid transparent;
+        }
+        .tab:hover { color: #fff; }
+        .tab.active { color: #fff; border-bottom-color: #fff; }
 
         #main {
             max-width: 1100px;
@@ -55,31 +60,12 @@
             padding: 0 20px;
         }
 
-        /* Breadcrumb */
-        #breadcrumb {
-            font-size: 12px;
-            color: #92aab0;
-            margin-bottom: 18px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        #breadcrumb a {
-            color: #035765;
-            text-decoration: none;
-            cursor: pointer;
-        }
-
-        #breadcrumb a:hover { text-decoration: underline; }
-
         /* Club grid */
         #club-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
             gap: 16px;
         }
-
         .club-card {
             background: #fff;
             border: 1px solid #dfe5e6;
@@ -89,237 +75,161 @@
             cursor: pointer;
             transition: box-shadow 0.15s, border-color 0.15s;
         }
-
-        .club-card:hover {
-            box-shadow: 0 2px 10px rgba(0,75,88,0.15);
-            border-color: #63858e;
-        }
-
-        .club-card h2 {
-            color: #004b58;
-            font-size: 14px;
-            margin-bottom: 12px;
-        }
-
-        .club-stats {
-            display: flex;
-            gap: 20px;
-        }
-
-        .stat-label {
-            font-size: 11px;
-            color: #92aab0;
-            margin-bottom: 2px;
-        }
-
-        .stat-value {
-            font-size: 20px;
-            font-weight: bold;
-            color: #004b58;
-        }
-
+        .club-card:hover { box-shadow: 0 2px 10px rgba(0,75,88,0.15); border-color: #63858e; }
+        .club-card h2 { color: #004b58; font-size: 14px; margin-bottom: 12px; }
+        .club-stats { display: flex; gap: 20px; }
+        .stat-label { font-size: 11px; color: #92aab0; margin-bottom: 2px; }
+        .stat-value { font-size: 20px; font-weight: bold; color: #004b58; }
         .stat-value.amount { color: #035765; }
 
-        /* Club detail */
+        /* Detail view */
         #club-detail { display: none; }
-
         .detail-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
             margin-bottom: 18px;
         }
+        .detail-header h2 { color: #004b58; font-size: 18px; }
 
-        .detail-header h2 {
-            color: #004b58;
-            font-size: 18px;
-        }
+        /* Breadcrumb */
+        .breadcrumb { font-size: 12px; color: #92aab0; margin-bottom: 18px; }
+        .breadcrumb a { color: #035765; text-decoration: none; cursor: pointer; }
+        .breadcrumb a:hover { text-decoration: underline; }
 
+        /* Buttons */
         .btn-primary {
-            background-color: #004b58;
-            color: #fff;
-            border: none;
-            border-radius: 4px;
-            padding: 9px 18px;
-            font-size: 13px;
-            cursor: pointer;
+            background-color: #004b58; color: #fff; border: none;
+            border-radius: 4px; padding: 9px 18px; font-size: 13px; cursor: pointer;
         }
-
         .btn-primary:hover { background-color: #035765; }
+        .btn-approve {
+            background-color: #2a7a2a; color: #fff; border: none;
+            border-radius: 4px; padding: 5px 12px; font-size: 11px; cursor: pointer;
+        }
+        .btn-approve:hover { background-color: #1e5c1e; }
+        .btn-reject {
+            background-color: #fff; color: #c00; border: 1px solid #c00;
+            border-radius: 4px; padding: 5px 12px; font-size: 11px; cursor: pointer;
+        }
+        .btn-reject:hover { background-color: #fde8e8; }
+        .btn-cancel {
+            background: #fff; color: #4c4e4f; border: 1px solid #dfe5e6;
+            border-radius: 4px; padding: 9px 18px; font-size: 13px; cursor: pointer;
+        }
+        .btn-cancel:hover { background: #f5f3f2; }
 
         /* Table */
         .table-wrap {
-            background: #fff;
-            border: 1px solid #dfe5e6;
-            border-radius: 6px;
-            box-shadow: 0 0 4px rgba(0,0,0,0.08);
-            overflow: hidden;
+            background: #fff; border: 1px solid #dfe5e6;
+            border-radius: 6px; box-shadow: 0 0 4px rgba(0,0,0,0.08); overflow: hidden;
         }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
+        table { width: 100%; border-collapse: collapse; }
         thead th {
-            background-color: #004b58;
-            color: #fff;
-            font-size: 12px;
-            font-weight: normal;
-            text-align: left;
-            padding: 10px 14px;
+            background-color: #004b58; color: #fff; font-size: 12px;
+            font-weight: normal; text-align: left; padding: 10px 14px;
         }
-
-        tbody tr {
-            border-bottom: 1px solid #e4e8e9;
-        }
-
+        tbody tr { border-bottom: 1px solid #e4e8e9; }
         tbody tr:last-child { border-bottom: none; }
-
         tbody tr:hover { background-color: #faf9f8; }
-
-        tbody td {
-            padding: 10px 14px;
-            font-size: 12px;
-        }
+        tbody td { padding: 10px 14px; font-size: 12px; }
 
         .badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 11px;
+            display: inline-block; padding: 2px 8px;
+            border-radius: 10px; font-size: 11px;
         }
-
         .badge-ingediend { background: #e8f4f0; color: #035765; }
         .badge-goedgekeurd { background: #e6f4e6; color: #2a7a2a; }
         .badge-afgekeurd { background: #fde8e8; color: #c00; }
 
-        .link-bonnetje {
-            color: #035765;
-            text-decoration: none;
-            font-size: 11px;
-        }
-
+        .link-bonnetje { color: #035765; text-decoration: none; font-size: 11px; }
         .link-bonnetje:hover { text-decoration: underline; }
+        .empty-state { text-align: center; padding: 40px; color: #92aab0; }
+        .loading { color: #92aab0; padding: 20px; text-align: center; }
 
-        .empty-state {
-            text-align: center;
-            padding: 40px;
-            color: #92aab0;
+        /* Admin section */
+        #admin-view { display: none; }
+        .admin-section-title {
+            color: #004b58; font-size: 16px; font-weight: bold;
+            margin-bottom: 16px; padding-bottom: 8px;
+            border-bottom: 2px solid #dfe5e6;
         }
+        .ref-code { font-family: monospace; font-size: 11px; color: #63858e; }
 
         /* Modal */
         #modal-overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.4);
-            z-index: 100;
-            align-items: center;
-            justify-content: center;
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.4); z-index: 100;
+            align-items: center; justify-content: center;
         }
-
         #modal-overlay.open { display: flex; }
-
         #modal {
-            background: #fff;
-            border-radius: 6px;
+            background: #fff; border-radius: 6px;
             box-shadow: 0 4px 24px rgba(0,0,0,0.2);
-            width: 480px;
-            max-width: 95vw;
-            max-height: 90vh;
-            overflow-y: auto;
+            width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto;
         }
-
         .modal-header {
-            background: #004b58;
-            color: #fff;
-            padding: 16px 20px;
+            background: #004b58; color: #fff; padding: 16px 20px;
             border-radius: 6px 6px 0 0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            display: flex; justify-content: space-between; align-items: center;
         }
-
         .modal-header h3 { font-size: 15px; }
-
         .modal-close {
-            background: none;
-            border: none;
-            color: #92aab0;
-            font-size: 20px;
-            cursor: pointer;
-            line-height: 1;
+            background: none; border: none; color: #92aab0;
+            font-size: 20px; cursor: pointer; line-height: 1;
         }
-
         .modal-close:hover { color: #fff; }
-
         .modal-body { padding: 20px; }
-
-        .form-row {
-            margin-bottom: 14px;
-        }
-
-        .form-row label {
-            display: block;
-            font-size: 12px;
-            color: #4c4e4f;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }
-
-        .form-row input,
-        .form-row select,
-        .form-row textarea {
-            width: 100%;
-            padding: 8px 10px;
-            border: 1px solid #dfe5e6;
-            border-radius: 4px;
-            font-size: 13px;
-            font-family: Arial, sans-serif;
-        }
-
-        .form-row textarea { resize: vertical; min-height: 70px; }
-
-        .form-row input:focus,
-        .form-row select:focus,
-        .form-row textarea:focus {
-            outline: none;
-            border-color: #63858e;
-        }
-
-        .form-row-2 {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-bottom: 14px;
-        }
-
         .modal-footer {
-            padding: 14px 20px;
-            border-top: 1px solid #dfe5e6;
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
+            padding: 14px 20px; border-top: 1px solid #dfe5e6;
+            display: flex; justify-content: flex-end; gap: 10px;
         }
 
-        .btn-cancel {
-            background: #fff;
-            color: #4c4e4f;
-            border: 1px solid #dfe5e6;
-            border-radius: 4px;
-            padding: 9px 18px;
-            font-size: 13px;
-            cursor: pointer;
+        /* QR modal */
+        #qr-modal {
+            background: #fff; border-radius: 6px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+            width: 420px; max-width: 95vw;
+        }
+        .qr-body {
+            padding: 24px; text-align: center;
+        }
+        .qr-body h3 { color: #004b58; font-size: 16px; margin-bottom: 4px; }
+        .qr-body .qr-sub { color: #92aab0; font-size: 12px; margin-bottom: 20px; }
+        #qr-canvas { margin: 0 auto 16px; display: block; }
+        .qr-details {
+            background: #f5f3f2; border-radius: 4px;
+            padding: 12px 16px; text-align: left; font-size: 12px; margin-top: 16px;
+        }
+        .qr-details div { margin-bottom: 4px; }
+        .qr-details strong { color: #004b58; }
+        .qr-ref {
+            font-family: monospace; font-size: 14px; font-weight: bold;
+            color: #035765; background: #e8f4f0;
+            padding: 8px 16px; border-radius: 4px; display: inline-block;
+            margin-bottom: 16px; letter-spacing: 1px;
         }
 
-        .btn-cancel:hover { background: #f5f3f2; }
-
-        /* Loading / error */
-        .loading { color: #92aab0; padding: 20px; text-align: center; }
+        /* Form */
+        .form-row { margin-bottom: 14px; }
+        .form-row label {
+            display: block; font-size: 12px; color: #4c4e4f;
+            margin-bottom: 5px; font-weight: bold;
+        }
+        .form-row input, .form-row select, .form-row textarea {
+            width: 100%; padding: 8px 10px; border: 1px solid #dfe5e6;
+            border-radius: 4px; font-size: 13px; font-family: Arial, sans-serif;
+        }
+        .form-row textarea { resize: vertical; min-height: 70px; }
+        .form-row input:focus, .form-row select:focus, .form-row textarea:focus {
+            outline: none; border-color: #63858e;
+        }
+        .form-row-2 {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 12px; margin-bottom: 14px;
+        }
         .error-msg { color: #c00; font-size: 12px; margin-top: 8px; }
         .success-msg { color: #2a7a2a; font-size: 12px; margin-top: 8px; }
-
         #form-status { min-height: 20px; }
     </style>
 </head>
@@ -333,45 +243,76 @@
     <button onclick="logout()">Uitloggen</button>
 </div>
 
+<div id="tabs">
+    <div class="tab active" onclick="switchTab('overzicht')">Overzicht</div>
+    <div class="tab" onclick="switchTab('admin')">Admin</div>
+</div>
+
 <div id="main">
-    <!-- Overview -->
-    <div id="overview">
-        <div id="breadcrumb">Overzicht</div>
-        <div id="club-grid">
-            <div class="loading">Laden...</div>
+
+    <!-- OVERZICHT TAB -->
+    <div id="overzicht-tab">
+        <div id="overview">
+            <div id="club-grid"><div class="loading">Laden...</div></div>
+        </div>
+        <div id="club-detail">
+            <div class="breadcrumb" id="bc"></div>
+            <div class="detail-header">
+                <h2 id="detail-title"></h2>
+                <button class="btn-primary" onclick="openModal()">+ Nieuwe declaratie</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Naam</th><th>Datum</th><th>Bedrag</th>
+                            <th>Categorie</th><th>Omschrijving</th><th>Bonnetje</th><th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="declarations-tbody">
+                        <tr><td colspan="7" class="loading">Laden...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
-    <!-- Club detail -->
-    <div id="club-detail">
-        <div id="breadcrumb-detail" class="detail-header">
-            <div id="breadcrumb2">
-                <span id="bc-overview"></span>
-            </div>
-            <button class="btn-primary" onclick="openModal()">+ Nieuwe declaratie</button>
-        </div>
+    <!-- ADMIN TAB -->
+    <div id="admin-tab" style="display:none">
+        <div class="admin-section-title">Openstaande declaraties</div>
         <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
-                        <th>Naam</th>
-                        <th>Datum</th>
-                        <th>Bedrag</th>
-                        <th>Categorie</th>
-                        <th>Omschrijving</th>
-                        <th>Bonnetje</th>
-                        <th>Status</th>
+                        <th>Naam</th><th>Club</th><th>Datum</th><th>Bedrag</th>
+                        <th>Omschrijving</th><th>Bonnetje</th><th>IBAN</th><th>Acties</th>
                     </tr>
                 </thead>
-                <tbody id="declarations-tbody">
-                    <tr><td colspan="7" class="loading">Laden...</td></tr>
+                <tbody id="admin-tbody">
+                    <tr><td colspan="8" class="loading">Laden...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="admin-section-title" style="margin-top:32px">Alle declaraties</div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Naam</th><th>Club</th><th>Datum</th><th>Bedrag</th>
+                        <th>Status</th><th>Referentie</th>
+                    </tr>
+                </thead>
+                <tbody id="admin-all-tbody">
+                    <tr><td colspan="6" class="loading">Laden...</td></tr>
                 </tbody>
             </table>
         </div>
     </div>
+
 </div>
 
-<!-- Modal -->
+<!-- Declaratie form modal -->
 <div id="modal-overlay">
     <div id="modal">
         <div class="modal-header">
@@ -421,6 +362,10 @@
                     <textarea id="f-omschrijving" name="omschrijving" required></textarea>
                 </div>
                 <div class="form-row">
+                    <label for="f-iban">Jouw IBAN (voor uitbetaling) *</label>
+                    <input type="text" id="f-iban" name="iban" placeholder="NL00 BANK 0000 0000 00" required>
+                </div>
+                <div class="form-row">
                     <label for="f-bonnetje">Bonnetje (foto/PDF)</label>
                     <input type="file" id="f-bonnetje" name="bonnetje" accept="image/*,.pdf">
                 </div>
@@ -434,49 +379,85 @@
     </div>
 </div>
 
+<!-- QR betaalverzoek modal -->
+<div id="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:200;align-items:center;justify-content:center;" id="qr-overlay">
+    <div id="qr-modal"></div>
+</div>
+<div id="qr-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:200;align-items:center;justify-content:center;">
+    <div id="qr-modal">
+        <div class="modal-header">
+            <h3>Betaalverzoek</h3>
+            <button class="modal-close" onclick="closeQr()">&#x2715;</button>
+        </div>
+        <div class="qr-body">
+            <p style="color:#92aab0;font-size:12px;margin-bottom:16px">Scan met uw bankieren-app om direct te betalen</p>
+            <div class="qr-ref" id="qr-ref-display"></div>
+            <canvas id="qr-canvas"></canvas>
+            <div class="qr-details" id="qr-details"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-cancel" onclick="closeQr()">Sluiten</button>
+        </div>
+    </div>
+</div>
+
 <script>
 const CLUBS = [
-    "Meisjes groep 5 & 6",
-    "Jongens groep 5 & 6",
-    "Meisjes groep 7 & 8",
-    "Jongens groep 7 & 8",
-    "Tienerclub",
-    "JV Brea"
+    "Meisjes groep 5 & 6","Jongens groep 5 & 6",
+    "Meisjes groep 7 & 8","Jongens groep 7 & 8",
+    "Tienerclub","JV Brea"
 ];
 
 let allDeclarations = [];
 let currentClub = null;
+let currentTab = "overzicht";
 
-async function loadOverview() {
+// ── Tab switching ──────────────────────────────────────────────
+function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll(".tab").forEach((t, i) => {
+        t.classList.toggle("active", ["overzicht","admin"][i] === tab);
+    });
+    document.getElementById("overzicht-tab").style.display = tab === "overzicht" ? "" : "none";
+    document.getElementById("admin-tab").style.display = tab === "admin" ? "" : "none";
+    if (tab === "admin") loadAdmin();
+}
+
+// ── Data loading ──────────────────────────────────────────────
+async function loadAll() {
     try {
         const res = await fetch("/api/declarations");
         const data = await res.json();
         allDeclarations = data.records || [];
         renderClubGrid();
     } catch {
-        document.getElementById("club-grid").innerHTML = '<p class="error-msg">Fout bij laden. Probeer opnieuw.</p>';
+        document.getElementById("club-grid").innerHTML = '<p class="error-msg">Fout bij laden.</p>';
     }
 }
 
+async function loadAdmin() {
+    const res = await fetch("/api/declarations");
+    const data = await res.json();
+    allDeclarations = data.records || [];
+
+    const pending = allDeclarations.filter(r => r.fields.Status === "Ingediend");
+    renderAdminPending(pending);
+    renderAdminAll(allDeclarations);
+}
+
+// ── Overview ──────────────────────────────────────────────────
 function renderClubGrid() {
     const grid = document.getElementById("club-grid");
     grid.innerHTML = CLUBS.map(club => {
         const records = allDeclarations.filter(r => r.fields.Club === club);
-        const total = records.reduce((sum, r) => sum + (r.fields.Bedrag || 0), 0);
-        return `
-            <div class="club-card" onclick="showClub('${club.replace(/'/g, "\\'")}')">
-                <h2>${club}</h2>
-                <div class="club-stats">
-                    <div>
-                        <div class="stat-label">Declaraties</div>
-                        <div class="stat-value">${records.length}</div>
-                    </div>
-                    <div>
-                        <div class="stat-label">Totaal</div>
-                        <div class="stat-value amount">€ ${total.toFixed(2).replace(".", ",")}</div>
-                    </div>
-                </div>
-            </div>`;
+        const total = records.reduce((s, r) => s + (r.fields.Bedrag || 0), 0);
+        return `<div class="club-card" onclick="showClub('${club.replace(/'/g,"\\'")}')">
+            <h2>${club}</h2>
+            <div class="club-stats">
+                <div><div class="stat-label">Declaraties</div><div class="stat-value">${records.length}</div></div>
+                <div><div class="stat-label">Totaal</div><div class="stat-value amount">€ ${total.toFixed(2).replace(".",",")}</div></div>
+            </div>
+        </div>`;
     }).join("");
 }
 
@@ -484,15 +465,10 @@ function showClub(club) {
     currentClub = club;
     document.getElementById("overview").style.display = "none";
     document.getElementById("club-detail").style.display = "block";
-
-    document.getElementById("bc-overview").innerHTML =
-        `<span id="breadcrumb2"><a onclick="showOverview()">Overzicht</a> › ${club}</span>`;
-
-    const records = allDeclarations.filter(r => r.fields.Club === club);
-    renderDeclarations(records);
-
-    // Pre-select club in form
+    document.getElementById("detail-title").textContent = club;
+    document.getElementById("bc").innerHTML = `<a onclick="showOverview()">Overzicht</a> › ${club}`;
     document.getElementById("f-club").value = club;
+    renderDeclarations(allDeclarations.filter(r => r.fields.Club === club));
 }
 
 function showOverview() {
@@ -504,46 +480,165 @@ function showOverview() {
 
 function renderDeclarations(records) {
     const tbody = document.getElementById("declarations-tbody");
-    if (records.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Nog geen declaraties voor deze club.</td></tr>';
+    if (!records.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Nog geen declaraties.</td></tr>';
         return;
     }
-
-    const sorted = [...records].sort((a, b) => (b.fields.Datum || "").localeCompare(a.fields.Datum || ""));
-
-    tbody.innerHTML = sorted.map(r => {
+    tbody.innerHTML = records.sort((a,b) => (b.fields.Datum||"").localeCompare(a.fields.Datum||"")).map(r => {
         const f = r.fields;
         const datum = f.Datum ? new Date(f.Datum).toLocaleDateString("nl-NL") : "–";
-        const bedrag = f.Bedrag != null ? `€ ${f.Bedrag.toFixed(2).replace(".", ",")}` : "–";
-        const badgeClass = { Ingediend: "badge-ingediend", Goedgekeurd: "badge-goedgekeurd", Afgekeurd: "badge-afgekeurd" }[f.Status] || "badge-ingediend";
-        const bonnetje = f.Bonnetje && f.Bonnetje.length > 0
-            ? `<a class="link-bonnetje" href="${f.Bonnetje[0].url}" target="_blank">Bekijken</a>`
-            : "–";
+        const bedrag = f.Bedrag != null ? `€ ${f.Bedrag.toFixed(2).replace(".",",")}` : "–";
+        const badge = `<span class="badge badge-${(f.Status||"Ingediend").toLowerCase()}">${f.Status||"Ingediend"}</span>`;
+        const bonnetje = f.Bonnetje?.length ? `<a class="link-bonnetje" href="${f.Bonnetje[0].url}" target="_blank">Bekijken</a>` : "–";
+        return `<tr><td>${f.Naam||"–"}</td><td>${datum}</td><td>${bedrag}</td><td>${f.Categorie||"–"}</td><td>${f.Omschrijving||"–"}</td><td>${bonnetje}</td><td>${badge}</td></tr>`;
+    }).join("");
+}
 
+// ── Admin ─────────────────────────────────────────────────────
+function renderAdminPending(records) {
+    const tbody = document.getElementById("admin-tbody");
+    if (!records.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Geen openstaande declaraties.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = records.map(r => {
+        const f = r.fields;
+        const datum = f.Datum ? new Date(f.Datum).toLocaleDateString("nl-NL") : "–";
+        const bedrag = f.Bedrag != null ? `€ ${f.Bedrag.toFixed(2).replace(".",",")}` : "–";
+        const bonnetje = f.Bonnetje?.length ? `<a class="link-bonnetje" href="${f.Bonnetje[0].url}" target="_blank">Bekijken</a>` : "–";
+        const iban = f.IBAN || "–";
         return `<tr>
-            <td>${f.Naam || "–"}</td>
-            <td>${datum}</td>
-            <td>${bedrag}</td>
-            <td>${f.Categorie || "–"}</td>
-            <td>${f.Omschrijving || "–"}</td>
-            <td>${bonnetje}</td>
-            <td><span class="badge ${badgeClass}">${f.Status || "Ingediend"}</span></td>
+            <td>${f.Naam||"–"}</td><td>${f.Club||"–"}</td><td>${datum}</td>
+            <td>${bedrag}</td><td>${f.Omschrijving||"–"}</td><td>${bonnetje}</td>
+            <td><code style="font-size:11px">${iban}</code></td>
+            <td style="white-space:nowrap">
+                <button class="btn-approve" onclick="approve('${r.id}')">Goedkeuren</button>
+                &nbsp;
+                <button class="btn-reject" onclick="reject('${r.id}')">Afkeuren</button>
+            </td>
         </tr>`;
     }).join("");
 }
 
+function renderAdminAll(records) {
+    const tbody = document.getElementById("admin-all-tbody");
+    tbody.innerHTML = records.sort((a,b) => (b.fields.Datum||"").localeCompare(a.fields.Datum||"")).map(r => {
+        const f = r.fields;
+        const datum = f.Datum ? new Date(f.Datum).toLocaleDateString("nl-NL") : "–";
+        const bedrag = f.Bedrag != null ? `€ ${f.Bedrag.toFixed(2).replace(".",",")}` : "–";
+        const badge = `<span class="badge badge-${(f.Status||"ingediend").toLowerCase()}">${f.Status||"Ingediend"}</span>`;
+        const ref = f.Referentie ? `<span class="ref-code">${f.Referentie}</span>` : "–";
+        return `<tr><td>${f.Naam||"–"}</td><td>${f.Club||"–"}</td><td>${datum}</td><td>${bedrag}</td><td>${badge}</td><td>${ref}</td></tr>`;
+    }).join("");
+}
+
+async function approve(recordId) {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = "Bezig...";
+
+    try {
+        const res = await fetch(`/api/declarations/${recordId}/approve`, { method: "POST" });
+        const data = await res.json();
+
+        if (res.ok) {
+            const record = data.record;
+            const f = record.fields;
+            showQr({
+                naam: f.Naam,
+                iban: f.IBAN,
+                bedrag: f.Bedrag,
+                referentie: data.referentie,
+                omschrijving: f.Omschrijving,
+                club: f.Club,
+            });
+            await loadAdmin();
+        } else {
+            alert("Fout bij goedkeuren: " + (data.error || "onbekend"));
+            btn.disabled = false;
+            btn.textContent = "Goedkeuren";
+        }
+    } catch {
+        alert("Verbindingsfout.");
+        btn.disabled = false;
+        btn.textContent = "Goedkeuren";
+    }
+}
+
+async function reject(recordId) {
+    if (!confirm("Declaratie afkeuren?")) return;
+    await fetch(`/api/declarations/${recordId}/reject`, { method: "POST" });
+    await loadAdmin();
+}
+
+// ── EPC QR code ───────────────────────────────────────────────
+function buildEpcPayload({ naam, iban, bedrag, referentie }) {
+    // EU EPC QR code standard (EPC069-12)
+    const ibanClean = (iban || "").replace(/\s+/g, "").toUpperCase();
+    const amount = `EUR${parseFloat(bedrag).toFixed(2)}`;
+    const name = (naam || "").substring(0, 70);
+    const ref = (referentie || "").substring(0, 140);
+
+    return [
+        "BCD",       // Service Tag
+        "002",       // Version
+        "1",         // Character set: UTF-8
+        "SCT",       // SEPA Credit Transfer
+        "",          // BIC (optional)
+        name,        // Beneficiary name
+        ibanClean,   // Beneficiary IBAN
+        amount,      // Amount
+        "",          // Purpose (optional)
+        "",          // Structured reference (optional)
+        ref,         // Unstructured remittance info
+        "",          // Beneficiary to originator info
+    ].join("\n");
+}
+
+function showQr({ naam, iban, bedrag, referentie, omschrijving, club }) {
+    const payload = buildEpcPayload({ naam, iban, bedrag, referentie });
+
+    document.getElementById("qr-ref-display").textContent = referentie;
+    document.getElementById("qr-details").innerHTML = `
+        <div><strong>Ontvanger:</strong> ${naam}</div>
+        <div><strong>IBAN:</strong> ${iban}</div>
+        <div><strong>Bedrag:</strong> € ${parseFloat(bedrag).toFixed(2).replace(".",",")}</div>
+        <div><strong>Club:</strong> ${club}</div>
+        <div><strong>Omschrijving:</strong> ${omschrijving}</div>
+    `;
+
+    const canvas = document.getElementById("qr-canvas");
+    QRCode.toCanvas(canvas, payload, { width: 256, margin: 2, errorCorrectionLevel: "M" }, err => {
+        if (err) console.error(err);
+    });
+
+    document.getElementById("qr-overlay").style.display = "flex";
+}
+
+function closeQr() {
+    document.getElementById("qr-overlay").style.display = "none";
+}
+
+document.getElementById("qr-overlay").addEventListener("click", e => {
+    if (e.target === document.getElementById("qr-overlay")) closeQr();
+});
+
+// ── Declaration form ──────────────────────────────────────────
 function openModal() {
-    document.getElementById("modal-overlay").classList.add("open");
+    document.getElementById("modal-overlay").style.display = "flex";
     document.getElementById("form-status").innerHTML = "";
     document.getElementById("decl-form").reset();
     if (currentClub) document.getElementById("f-club").value = currentClub;
-    // Default to today
     document.getElementById("f-datum").value = new Date().toISOString().split("T")[0];
 }
 
 function closeModal() {
-    document.getElementById("modal-overlay").classList.remove("open");
+    document.getElementById("modal-overlay").style.display = "none";
 }
+
+document.getElementById("modal-overlay").addEventListener("click", e => {
+    if (e.target === document.getElementById("modal-overlay")) closeModal();
+});
 
 async function submitDeclaration(e) {
     e.preventDefault();
@@ -554,47 +649,36 @@ async function submitDeclaration(e) {
     status.innerHTML = "";
 
     try {
-        const formData = new FormData(document.getElementById("decl-form"));
-        const res = await fetch("/api/declarations", { method: "POST", body: formData });
+        const res = await fetch("/api/declarations", {
+            method: "POST",
+            body: new FormData(document.getElementById("decl-form"))
+        });
         const result = await res.json();
 
         if (res.ok) {
             status.innerHTML = '<span class="success-msg">Declaratie ingediend!</span>';
-            // Reload data
             const all = await fetch("/api/declarations");
             const data = await all.json();
             allDeclarations = data.records || [];
-
             setTimeout(() => {
                 closeModal();
-                if (currentClub) {
-                    const records = allDeclarations.filter(r => r.fields.Club === currentClub);
-                    renderDeclarations(records);
-                } else {
-                    renderClubGrid();
-                }
+                if (currentClub) renderDeclarations(allDeclarations.filter(r => r.fields.Club === currentClub));
+                else renderClubGrid();
             }, 800);
         } else {
-            status.innerHTML = `<span class="error-msg">Fout: ${result.error || "Onbekende fout"}</span>`;
+            status.innerHTML = `<span class="error-msg">Fout: ${result.error || "Onbekend"}</span>`;
         }
     } catch {
-        status.innerHTML = '<span class="error-msg">Verbindingsfout. Probeer opnieuw.</span>';
+        status.innerHTML = '<span class="error-msg">Verbindingsfout.</span>';
     } finally {
         btn.disabled = false;
         btn.textContent = "Indienen";
     }
 }
 
-function logout() {
-    window.location.href = "/api/logout";
-}
+function logout() { window.location.href = "/api/logout"; }
 
-// Close modal on overlay click
-document.getElementById("modal-overlay").addEventListener("click", e => {
-    if (e.target === document.getElementById("modal-overlay")) closeModal();
-});
-
-loadOverview();
+loadAll();
 </script>
 </body>
 </html>

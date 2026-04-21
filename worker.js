@@ -61,6 +61,15 @@ function isAuthenticated(request) {
     return cookie.split(";").some(c => c.trim() === `${COOKIE_NAME}=1`);
 }
 
+function generateReference() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    const rand = Math.random().toString(36).substring(2, 5).toUpperCase();
+    return `HHG-${y}${m}${d}-${rand}`;
+}
+
 async function getDeclarations(env, club) {
     let formula = "";
     if (club) {
@@ -84,9 +93,9 @@ async function createDeclaration(request, env) {
     const datum = formData.get("datum");
     const omschrijving = formData.get("omschrijving");
     const categorie = formData.get("categorie");
+    const iban = (formData.get("iban") || "").trim().replace(/\s+/g, "");
     const bonnetje = formData.get("bonnetje");
 
-    // Create record in Airtable
     const createRes = await fetch(
         `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(env.AIRTABLE_TABLE_NAME)}`,
         {
@@ -103,6 +112,7 @@ async function createDeclaration(request, env) {
                     Datum: datum,
                     Omschrijving: omschrijving,
                     Categorie: categorie,
+                    IBAN: iban,
                     Status: "Ingediend",
                 },
             }),
@@ -120,7 +130,6 @@ async function createDeclaration(request, env) {
     const created = await createRes.json();
     const recordId = created.id;
 
-    // Upload attachment if present
     if (bonnetje && bonnetje.size > 0) {
         const uploadForm = new FormData();
         uploadForm.append("file", bonnetje, bonnetje.name || "bonnetje");
@@ -141,12 +150,64 @@ async function createDeclaration(request, env) {
     });
 }
 
+async function approveDeclaration(recordId, env) {
+    const referentie = generateReference();
+
+    const updateRes = await fetch(
+        `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(env.AIRTABLE_TABLE_NAME)}/${recordId}`,
+        {
+            method: "PATCH",
+            headers: {
+                Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                fields: {
+                    Status: "Goedgekeurd",
+                    Referentie: referentie,
+                },
+            }),
+        }
+    );
+
+    if (!updateRes.ok) {
+        const err = await updateRes.json();
+        return new Response(JSON.stringify({ error: err.error?.message || "Airtable fout" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
+    const updated = await updateRes.json();
+    return new Response(JSON.stringify({ success: true, referentie, record: updated }), {
+        headers: { "Content-Type": "application/json" },
+    });
+}
+
+async function rejectDeclaration(recordId, env) {
+    const updateRes = await fetch(
+        `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(env.AIRTABLE_TABLE_NAME)}/${recordId}`,
+        {
+            method: "PATCH",
+            headers: {
+                Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ fields: { Status: "Afgekeurd" } }),
+        }
+    );
+
+    const updated = await updateRes.json();
+    return new Response(JSON.stringify({ success: updateRes.ok, record: updated }), {
+        headers: { "Content-Type": "application/json" },
+    });
+}
+
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
         const path = url.pathname;
 
-        // Logout
         if (path === "/api/logout") {
             return new Response("", {
                 status: 302,
@@ -157,7 +218,6 @@ export default {
             });
         }
 
-        // API routes — require auth
         if (path.startsWith("/api/")) {
             if (!isAuthenticated(request)) {
                 return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -166,20 +226,30 @@ export default {
                 });
             }
 
-            if (path === "/api/declarations") {
-                if (request.method === "GET") {
-                    const club = url.searchParams.get("club") || null;
-                    return getDeclarations(env, club);
-                }
-                if (request.method === "POST") {
-                    return createDeclaration(request, env);
-                }
+            if (path === "/api/declarations" && request.method === "GET") {
+                const club = url.searchParams.get("club") || null;
+                return getDeclarations(env, club);
+            }
+
+            if (path === "/api/declarations" && request.method === "POST") {
+                return createDeclaration(request, env);
+            }
+
+            // PATCH /api/declarations/:id/approve
+            const approveMatch = path.match(/^\/api\/declarations\/([^/]+)\/approve$/);
+            if (approveMatch && request.method === "POST") {
+                return approveDeclaration(approveMatch[1], env);
+            }
+
+            // POST /api/declarations/:id/reject
+            const rejectMatch = path.match(/^\/api\/declarations\/([^/]+)\/reject$/);
+            if (rejectMatch && request.method === "POST") {
+                return rejectDeclaration(rejectMatch[1], env);
             }
 
             return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
         }
 
-        // Dashboard — serve SPA
         if (path === "/dashboard") {
             if (!isAuthenticated(request)) {
                 return new Response("", { status: 302, headers: { Location: "/" } });
@@ -189,7 +259,6 @@ export default {
             });
         }
 
-        // Login
         if (request.method === "POST") {
             const body = await request.formData();
             if (body.get("password") === PASSWORD) {
@@ -207,7 +276,6 @@ export default {
             });
         }
 
-        // GET / — show login or redirect
         if (isAuthenticated(request)) {
             return new Response("", { status: 302, headers: { Location: "/dashboard" } });
         }
