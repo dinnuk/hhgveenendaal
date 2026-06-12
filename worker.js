@@ -2,6 +2,8 @@ import dashboard from "./dashboard.html";
 
 const PASSWORD = "jeugdwerk";
 const COOKIE_NAME = "hhg_auth";
+const ADMIN_PASSWORD = "penningmeester";
+const ADMIN_COOKIE = "hhg_admin";
 
 const loginPage = `<!DOCTYPE html>
 <html lang="nl">
@@ -61,6 +63,28 @@ function isAuthenticated(request) {
     return cookie.split(";").some(c => c.trim() === `${COOKIE_NAME}=1`);
 }
 
+function isAdmin(request) {
+    const cookie = request.headers.get("Cookie") || "";
+    return cookie.split(";").some(c => c.trim() === `${ADMIN_COOKIE}=1`);
+}
+
+// ISO 13616 / mod-97 IBAN validatie
+const IBAN_LENGTHS = { NL: 18, BE: 16, DE: 22, FR: 27, GB: 22, ES: 24, IT: 27, LU: 20, AT: 20, CH: 21 };
+
+function isValidIban(input) {
+    const iban = (input || "").replace(/\s+/g, "").toUpperCase();
+    if (!/^[A-Z]{2}[0-9]{2}[A-Z0-9]{10,30}$/.test(iban)) return false;
+    const expected = IBAN_LENGTHS[iban.slice(0, 2)];
+    if (expected && iban.length !== expected) return false;
+    const rearranged = iban.slice(4) + iban.slice(0, 4);
+    let remainder = 0;
+    for (const ch of rearranged) {
+        const v = ch >= "0" && ch <= "9" ? ch : String(ch.charCodeAt(0) - 55);
+        for (const d of v) remainder = (remainder * 10 + Number(d)) % 97;
+    }
+    return remainder === 1;
+}
+
 function generateReference() {
     const now = new Date();
     const y = now.getFullYear();
@@ -93,8 +117,15 @@ async function createDeclaration(request, env) {
     const datum = formData.get("datum");
     const omschrijving = formData.get("omschrijving");
     const categorie = formData.get("categorie");
-    const iban = (formData.get("iban") || "").trim().replace(/\s+/g, "");
+    const iban = (formData.get("iban") || "").trim().replace(/\s+/g, "").toUpperCase();
     const bonnetje = formData.get("bonnetje");
+
+    if (!isValidIban(iban)) {
+        return new Response(JSON.stringify({ error: "Ongeldig IBAN-nummer" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
 
     const createRes = await fetch(
         `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(env.AIRTABLE_TABLE_NAME)}`,
@@ -226,19 +257,38 @@ export default {
         const path = url.pathname;
 
         if (path === "/api/logout") {
-            return new Response("", {
-                status: 302,
-                headers: {
-                    Location: "/",
-                    "Set-Cookie": `${COOKIE_NAME}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT`,
-                },
-            });
+            const headers = new Headers({ Location: "/" });
+            headers.append("Set-Cookie", `${COOKIE_NAME}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT`);
+            headers.append("Set-Cookie", `${ADMIN_COOKIE}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT`);
+            return new Response("", { status: 302, headers });
         }
 
         if (path.startsWith("/api/")) {
             if (!isAuthenticated(request)) {
                 return new Response(JSON.stringify({ error: "Unauthorized" }), {
                     status: 401,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }
+
+            if (path === "/api/admin-login" && request.method === "POST") {
+                const body = await request.json().catch(() => ({}));
+                if (body.password === ADMIN_PASSWORD) {
+                    return new Response(JSON.stringify({ success: true }), {
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Set-Cookie": `${ADMIN_COOKIE}=1; Path=/; HttpOnly; SameSite=Strict`,
+                        },
+                    });
+                }
+                return new Response(JSON.stringify({ error: "Ongeldig wachtwoord" }), {
+                    status: 401,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }
+
+            if (path === "/api/admin-check" && request.method === "GET") {
+                return new Response(JSON.stringify({ admin: isAdmin(request) }), {
                     headers: { "Content-Type": "application/json" },
                 });
             }
@@ -252,15 +302,17 @@ export default {
                 return createDeclaration(request, env);
             }
 
-            // PATCH /api/declarations/:id/approve
+            // Approve/reject vereisen admin-rechten
             const approveMatch = path.match(/^\/api\/declarations\/([^/]+)\/approve$/);
-            if (approveMatch && request.method === "POST") {
-                return approveDeclaration(approveMatch[1], env);
-            }
-
-            // POST /api/declarations/:id/reject
             const rejectMatch = path.match(/^\/api\/declarations\/([^/]+)\/reject$/);
-            if (rejectMatch && request.method === "POST") {
+            if ((approveMatch || rejectMatch) && request.method === "POST") {
+                if (!isAdmin(request)) {
+                    return new Response(JSON.stringify({ error: "Admin-rechten vereist" }), {
+                        status: 403,
+                        headers: { "Content-Type": "application/json" },
+                    });
+                }
+                if (approveMatch) return approveDeclaration(approveMatch[1], env);
                 return rejectDeclaration(rejectMatch[1], env);
             }
 

@@ -122,7 +122,8 @@
         /* Table */
         .table-wrap {
             background: #fff; border: 1px solid #dfe5e6;
-            border-radius: 6px; box-shadow: 0 0 4px rgba(0,0,0,0.08); overflow: hidden;
+            border-radius: 6px; box-shadow: 0 0 4px rgba(0,0,0,0.08);
+            overflow-x: auto; -webkit-overflow-scrolling: touch;
         }
         table { width: 100%; border-collapse: collapse; }
         thead th {
@@ -149,6 +150,20 @@
 
         /* Admin section */
         #admin-view { display: none; }
+        .admin-login-box {
+            background: #fff; border: 1px solid #dfe5e6; border-radius: 6px;
+            box-shadow: 0 0 4px rgba(0,0,0,0.08);
+            padding: 28px; max-width: 360px; margin: 40px auto;
+        }
+        .admin-login-box h3 { color: #004b58; font-size: 16px; margin-bottom: 6px; }
+        .admin-login-box p { color: #92aab0; font-size: 12px; margin-bottom: 16px; }
+        .admin-login-box input {
+            width: 100%; padding: 8px 10px; border: 1px solid #dfe5e6;
+            border-radius: 4px; font-size: 13px; margin-bottom: 12px;
+        }
+        .admin-login-box button { width: 100%; }
+        #admin-login-status { min-height: 18px; margin-top: 8px; }
+        #iban-feedback { min-height: 16px; margin-top: 4px; font-size: 11px; }
         .admin-section-title {
             color: #004b58; font-size: 16px; font-weight: bold;
             margin-bottom: 16px; padding-bottom: 8px;
@@ -231,6 +246,28 @@
         .error-msg { color: #c00; font-size: 12px; margin-top: 8px; }
         .success-msg { color: #2a7a2a; font-size: 12px; margin-top: 8px; }
         #form-status { min-height: 20px; }
+
+        /* ── Responsive ──────────────────────────────────────── */
+        table { min-width: 640px; }
+
+        @media (max-width: 700px) {
+            #header { padding: 0 14px; height: auto; min-height: 52px; flex-wrap: wrap; }
+            #header h1 { font-size: 14px; }
+            #header .subtitle { display: none; }
+            #tabs { padding: 0 14px; overflow-x: auto; }
+            .tab { padding: 10px 14px; white-space: nowrap; }
+            #main { margin: 16px auto; padding: 0 12px; }
+            #club-grid { grid-template-columns: 1fr; }
+            .detail-header { flex-direction: column; align-items: stretch; gap: 10px; }
+            .detail-header .btn-primary { width: 100%; }
+            .form-row-2 { grid-template-columns: 1fr; }
+            #modal { width: 100%; max-height: 95vh; }
+            #modal-overlay, #qr-overlay { padding: 8px; }
+            #qr-modal { width: 100%; }
+            .qr-body { padding: 16px; }
+            .admin-login-box { margin: 20px auto; }
+            thead th, tbody td { padding: 8px 10px; }
+        }
     </style>
 </head>
 <body>
@@ -279,6 +316,21 @@
 
     <!-- ADMIN TAB -->
     <div id="admin-tab" style="display:none">
+
+        <!-- Admin login -->
+        <div id="admin-login" style="display:none">
+            <div class="admin-login-box">
+                <h3>Admin-toegang</h3>
+                <p>Dit gedeelte is alleen voor de administrator.</p>
+                <form onsubmit="adminLogin(event)">
+                    <input type="password" id="admin-password" placeholder="Admin-wachtwoord" autocomplete="current-password">
+                    <button class="btn-primary" type="submit">Inloggen</button>
+                </form>
+                <div id="admin-login-status"></div>
+            </div>
+        </div>
+
+        <div id="admin-content" style="display:none">
         <div class="admin-section-title">Openstaande declaraties</div>
         <div class="table-wrap">
             <table>
@@ -308,6 +360,7 @@
                 </tbody>
             </table>
         </div>
+        </div><!-- /admin-content -->
     </div>
 
 </div>
@@ -364,6 +417,7 @@
                 <div class="form-row">
                     <label for="f-iban">Jouw IBAN (voor uitbetaling) *</label>
                     <input type="text" id="f-iban" name="iban" placeholder="NL00 BANK 0000 0000 00" required>
+                    <div id="iban-feedback"></div>
                 </div>
                 <div class="form-row">
                     <label for="f-bonnetje">Bonnetje (foto/PDF)</label>
@@ -417,7 +471,49 @@ function switchTab(tab) {
     });
     document.getElementById("overzicht-tab").style.display = tab === "overzicht" ? "" : "none";
     document.getElementById("admin-tab").style.display = tab === "admin" ? "" : "none";
-    if (tab === "admin") loadAdmin();
+    if (tab === "admin") checkAdminAccess();
+}
+
+// ── Admin auth ────────────────────────────────────────────────
+async function checkAdminAccess() {
+    const res = await fetch("/api/admin-check");
+    const data = await res.json();
+    document.getElementById("admin-login").style.display = data.admin ? "none" : "block";
+    document.getElementById("admin-content").style.display = data.admin ? "block" : "none";
+    if (data.admin) loadAdmin();
+}
+
+async function adminLogin(e) {
+    e.preventDefault();
+    const status = document.getElementById("admin-login-status");
+    status.innerHTML = "";
+    const res = await fetch("/api/admin-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: document.getElementById("admin-password").value })
+    });
+    if (res.ok) {
+        checkAdminAccess();
+    } else {
+        status.innerHTML = '<span class="error-msg">Ongeldig wachtwoord.</span>';
+    }
+}
+
+// ── IBAN validatie (mod-97, zelfde logica als server) ─────────
+const IBAN_LENGTHS = { NL: 18, BE: 16, DE: 22, FR: 27, GB: 22, ES: 24, IT: 27, LU: 20, AT: 20, CH: 21 };
+
+function isValidIban(input) {
+    const iban = (input || "").replace(/\s+/g, "").toUpperCase();
+    if (!/^[A-Z]{2}[0-9]{2}[A-Z0-9]{10,30}$/.test(iban)) return false;
+    const expected = IBAN_LENGTHS[iban.slice(0, 2)];
+    if (expected && iban.length !== expected) return false;
+    const rearranged = iban.slice(4) + iban.slice(0, 4);
+    let remainder = 0;
+    for (const ch of rearranged) {
+        const v = ch >= "0" && ch <= "9" ? ch : String(ch.charCodeAt(0) - 55);
+        for (const d of v) remainder = (remainder * 10 + Number(d)) % 97;
+    }
+    return remainder === 1;
 }
 
 // ── Data loading ──────────────────────────────────────────────
@@ -549,6 +645,8 @@ async function approve(recordId, btn) {
                 club: f.Club,
             });
             await loadAdmin();
+        } else if (res.status === 403) {
+            checkAdminAccess();
         } else {
             alert("Fout bij goedkeuren: " + (data.error || "onbekend"));
             btn.disabled = false;
@@ -563,7 +661,8 @@ async function approve(recordId, btn) {
 
 async function reject(recordId) {
     if (!confirm("Declaratie afkeuren?")) return;
-    await fetch(`/api/declarations/${recordId}/reject`, { method: "POST" });
+    const res = await fetch(`/api/declarations/${recordId}/reject`, { method: "POST" });
+    if (res.status === 403) { checkAdminAccess(); return; }
     await loadAdmin();
 }
 
@@ -646,10 +745,35 @@ document.getElementById("modal-overlay").addEventListener("click", e => {
     if (e.target === document.getElementById("modal-overlay")) closeModal();
 });
 
+// Live IBAN feedback tijdens typen
+document.getElementById("f-iban").addEventListener("input", e => {
+    const input = e.target;
+    const fb = document.getElementById("iban-feedback");
+    const value = input.value.trim();
+    if (!value) {
+        input.style.borderColor = "";
+        fb.innerHTML = "";
+        return;
+    }
+    if (isValidIban(value)) {
+        input.style.borderColor = "#2a7a2a";
+        fb.innerHTML = '<span class="success-msg">✓ Geldig IBAN</span>';
+    } else {
+        input.style.borderColor = "#c00";
+        fb.innerHTML = '<span class="error-msg">Ongeldig IBAN</span>';
+    }
+});
+
 async function submitDeclaration(e) {
     e.preventDefault();
     const btn = document.getElementById("submit-btn");
     const status = document.getElementById("form-status");
+
+    if (!isValidIban(document.getElementById("f-iban").value)) {
+        status.innerHTML = '<span class="error-msg">Controleer het IBAN-nummer.</span>';
+        return;
+    }
+
     btn.disabled = true;
     btn.textContent = "Bezig...";
     status.innerHTML = "";
