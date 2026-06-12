@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HHG Veenendaal – Declaraties</title>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -142,6 +141,71 @@
         .badge-ingediend { background: #e8f4f0; color: #035765; }
         .badge-goedgekeurd { background: #e6f4e6; color: #2a7a2a; }
         .badge-afgekeurd { background: #fde8e8; color: #c00; }
+        .badge-betaald { background: #eeeded; color: #4c4e4f; }
+
+        /* Budget dashboard */
+        .budget-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 16px;
+        }
+        .budget-card {
+            background: #fff; border: 1px solid #dfe5e6; border-radius: 6px;
+            box-shadow: 0 0 4px rgba(0,0,0,0.08); padding: 16px;
+        }
+        .budget-card h3 { color: #004b58; font-size: 13px; margin-bottom: 10px; }
+        .budget-inputs {
+            display: grid; grid-template-columns: 1fr 1fr auto;
+            gap: 8px; align-items: end; margin-bottom: 12px;
+        }
+        .budget-inputs label { font-size: 10px; color: #92aab0; display: block; margin-bottom: 3px; }
+        .budget-inputs input {
+            width: 100%; padding: 6px 8px; border: 1px solid #dfe5e6;
+            border-radius: 4px; font-size: 12px;
+        }
+        .budget-inputs button {
+            background: #004b58; color: #fff; border: none; border-radius: 4px;
+            padding: 7px 12px; font-size: 11px; cursor: pointer;
+        }
+        .budget-inputs button:hover { background: #035765; }
+        .budget-bar-bg {
+            background: #eeeded; border-radius: 6px; height: 10px;
+            overflow: hidden; margin: 8px 0 6px;
+        }
+        .budget-bar-fill { height: 100%; border-radius: 6px; background: #035765; transition: width 0.3s; }
+        .budget-bar-fill.warn { background: #d98b00; }
+        .budget-bar-fill.over { background: #c00; }
+        .budget-numbers { display: flex; justify-content: space-between; font-size: 11px; color: #63858e; }
+        .budget-rest { font-size: 18px; font-weight: bold; color: #035765; }
+        .budget-rest.negative { color: #c00; }
+        .budget-rate { font-size: 10px; color: #92aab0; }
+
+        /* Betaalkaartje */
+        .pay-row {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 8px; background: #f5f3f2; border-radius: 4px;
+            padding: 8px 12px; margin-bottom: 8px; text-align: left;
+        }
+        .pay-row .pay-label { font-size: 10px; color: #92aab0; display: block; }
+        .pay-row .pay-value { font-size: 13px; color: #004b58; font-weight: bold; word-break: break-all; }
+        .btn-copy {
+            background: #fff; border: 1px solid #dfe5e6; border-radius: 4px;
+            padding: 6px 10px; font-size: 11px; cursor: pointer; color: #035765;
+            white-space: nowrap; flex-shrink: 0;
+        }
+        .btn-copy:hover { border-color: #63858e; }
+        .btn-copy.copied { background: #e6f4e6; color: #2a7a2a; border-color: #2a7a2a; }
+        .btn-paid {
+            background-color: #035765; color: #fff; border: none;
+            border-radius: 4px; padding: 5px 12px; font-size: 11px; cursor: pointer;
+        }
+        .btn-paid:hover { background-color: #004b58; }
+
+        /* Pot op overzichtkaarten */
+        .club-pot { margin-top: 12px; padding-top: 10px; border-top: 1px solid #e4e8e9; }
+        .club-pot .pot-label { font-size: 11px; color: #92aab0; }
+        .club-pot .pot-value { font-size: 15px; font-weight: bold; color: #035765; }
+        .club-pot .pot-value.negative { color: #c00; }
 
         .link-bonnetje { color: #035765; text-decoration: none; font-size: 11px; }
         .link-bonnetje:hover { text-decoration: underline; }
@@ -331,7 +395,11 @@
         </div>
 
         <div id="admin-content" style="display:none">
-        <div class="admin-section-title">Openstaande declaraties</div>
+
+        <div class="admin-section-title">Budget per club</div>
+        <div id="budget-grid" class="budget-grid"><div class="loading">Laden...</div></div>
+
+        <div class="admin-section-title" style="margin-top:32px">Openstaande declaraties</div>
         <div class="table-wrap">
             <table>
                 <thead>
@@ -342,6 +410,24 @@
                 </thead>
                 <tbody id="admin-tbody">
                     <tr><td colspan="8" class="loading">Laden...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="admin-section-title" style="margin-top:32px">
+            Te betalen (goedgekeurd)
+            <button class="btn-primary" style="float:right;font-size:12px;padding:6px 14px" onclick="sepaExportDownload()">⬇ SEPA-export (bank)</button>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Naam</th><th>Club</th><th>Bedrag</th><th>IBAN</th>
+                        <th>Referentie</th><th>Acties</th>
+                    </tr>
+                </thead>
+                <tbody id="topay-tbody">
+                    <tr><td colspan="6" class="loading">Laden...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -433,18 +519,17 @@
     </div>
 </div>
 
-<!-- QR betaalverzoek modal -->
+<!-- Betaalkaartje modal -->
 <div id="qr-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:200;align-items:center;justify-content:center;">
     <div id="qr-modal">
         <div class="modal-header">
-            <h3>Betaalverzoek</h3>
+            <h3>Betaalgegevens</h3>
             <button class="modal-close" onclick="closeQr()">&#x2715;</button>
         </div>
         <div class="qr-body">
-            <p style="color:#92aab0;font-size:12px;margin-bottom:16px">Scan met uw bankieren-app om direct te betalen</p>
+            <p style="color:#92aab0;font-size:12px;margin-bottom:16px">Kopieer de gegevens en plak ze in je bankieren-app</p>
             <div class="qr-ref" id="qr-ref-display"></div>
-            <div id="qr-canvas"></div>
-            <div class="qr-details" id="qr-details"></div>
+            <div id="pay-rows"></div>
         </div>
         <div class="modal-footer">
             <button class="btn-cancel" onclick="closeQr()">Sluiten</button>
@@ -459,9 +544,41 @@ const CLUBS = [
     "Tienerclub","JV Brea"
 ];
 
+// Budget per lid per clubtype
+const RATES = {
+    "Meisjes groep 5 & 6": 12.5,
+    "Jongens groep 5 & 6": 12.5,
+    "Meisjes groep 7 & 8": 12.5,
+    "Jongens groep 7 & 8": 12.5,
+    "Tienerclub": 20,
+    "JV Brea": 30,
+};
+
 let allDeclarations = [];
+let clubsData = [];
 let currentClub = null;
 let currentTab = "overzicht";
+
+function euro(n) {
+    return "€ " + Number(n || 0).toFixed(2).replace(".", ",");
+}
+
+function clubRecord(club) {
+    return clubsData.find(c => c.fields.Club === club);
+}
+
+function clubBudget(club) {
+    const rec = clubRecord(club);
+    const leden = rec?.fields.Leden || 0;
+    const contributie = rec?.fields.Contributie || 0;
+    return leden * (RATES[club] || 0) + contributie;
+}
+
+function clubSpent(club) {
+    return allDeclarations
+        .filter(r => r.fields.Club === club && ["Goedgekeurd", "Betaald"].includes(r.fields.Status))
+        .reduce((s, r) => s + (r.fields.Bedrag || 0), 0);
+}
 
 // ── Tab switching ──────────────────────────────────────────────
 function switchTab(tab) {
@@ -517,11 +634,18 @@ function isValidIban(input) {
 }
 
 // ── Data loading ──────────────────────────────────────────────
+async function fetchData() {
+    const [declRes, clubRes] = await Promise.all([
+        fetch("/api/declarations"),
+        fetch("/api/clubs"),
+    ]);
+    allDeclarations = (await declRes.json()).records || [];
+    clubsData = (await clubRes.json()).records || [];
+}
+
 async function loadAll() {
     try {
-        const res = await fetch("/api/declarations");
-        const data = await res.json();
-        allDeclarations = data.records || [];
+        await fetchData();
         renderClubGrid();
     } catch {
         document.getElementById("club-grid").innerHTML = '<p class="error-msg">Fout bij laden.</p>';
@@ -529,13 +653,137 @@ async function loadAll() {
 }
 
 async function loadAdmin() {
-    const res = await fetch("/api/declarations");
-    const data = await res.json();
-    allDeclarations = data.records || [];
-
-    const pending = allDeclarations.filter(r => r.fields.Status === "Ingediend");
-    renderAdminPending(pending);
+    await fetchData();
+    renderBudgetGrid();
+    renderAdminPending(allDeclarations.filter(r => r.fields.Status === "Ingediend"));
+    renderToPay(allDeclarations.filter(r => r.fields.Status === "Goedgekeurd"));
     renderAdminAll(allDeclarations);
+}
+
+// ── Budget dashboard (admin) ──────────────────────────────────
+function renderBudgetGrid() {
+    const grid = document.getElementById("budget-grid");
+    grid.innerHTML = CLUBS.map(club => {
+        const rec = clubRecord(club);
+        const leden = rec?.fields.Leden || 0;
+        const contributie = rec?.fields.Contributie || 0;
+        const budget = clubBudget(club);
+        const spent = clubSpent(club);
+        const rest = budget - spent;
+        const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : (spent > 0 ? 100 : 0);
+        const barClass = rest < 0 ? "over" : (pct > 80 ? "warn" : "");
+        return `<div class="budget-card">
+            <h3>${club} <span class="budget-rate">(${euro(RATES[club])} p/lid)</span></h3>
+            <div class="budget-inputs">
+                <div>
+                    <label>Leden</label>
+                    <input type="number" min="0" step="1" id="leden-${rec?.id}" value="${leden}">
+                </div>
+                <div>
+                    <label>Contributie opgehaald</label>
+                    <input type="number" min="0" step="0.01" id="contributie-${rec?.id}" value="${contributie}">
+                </div>
+                <button onclick="saveClub('${rec?.id}', this)">Opslaan</button>
+            </div>
+            <div class="budget-rest ${rest < 0 ? "negative" : ""}">${euro(rest)} <span style="font-size:11px;font-weight:normal;color:#92aab0">in de pot</span></div>
+            <div class="budget-bar-bg"><div class="budget-bar-fill ${barClass}" style="width:${pct}%"></div></div>
+            <div class="budget-numbers">
+                <span>Besteed: ${euro(spent)}</span>
+                <span>Budget: ${euro(budget)}</span>
+            </div>
+        </div>`;
+    }).join("");
+}
+
+async function saveClub(recordId, btn) {
+    if (!recordId || recordId === "undefined") return;
+    btn.disabled = true;
+    btn.textContent = "...";
+    const res = await fetch(`/api/clubs/${recordId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            leden: document.getElementById(`leden-${recordId}`).value || 0,
+            contributie: document.getElementById(`contributie-${recordId}`).value || 0,
+        }),
+    });
+    if (res.status === 403) { checkAdminAccess(); return; }
+    await loadAdmin();
+}
+
+// ── Te betalen (admin) ────────────────────────────────────────
+function renderToPay(records) {
+    const tbody = document.getElementById("topay-tbody");
+    if (!records.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Geen openstaande betalingen.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = records.map(r => {
+        const f = r.fields;
+        const ibanOk = isValidIban(f.IBAN);
+        const ibanCell = ibanOk
+            ? `<code style="font-size:11px">${f.IBAN}</code>`
+            : `<code style="font-size:11px;color:#c00">${f.IBAN || "–"}</code> <span class="error-msg" style="font-size:10px">⚠ ongeldig</span>`;
+        return `<tr>
+            <td>${f.Naam || "–"}</td><td>${f.Club || "–"}</td>
+            <td>${euro(f.Bedrag)}</td>
+            <td>${ibanCell}</td>
+            <td><span class="ref-code">${f.Referentie || "–"}</span></td>
+            <td style="white-space:nowrap">
+                <button class="btn-copy" onclick='showPayment(${JSON.stringify({
+                    naam: f.Naam, iban: f.IBAN, bedrag: f.Bedrag,
+                    referentie: f.Referentie, omschrijving: f.Omschrijving, club: f.Club
+                }).replace(/'/g, "&#39;")})'>Betaalgegevens</button>
+                &nbsp;
+                <button class="btn-paid" onclick="markPaidBtn('${r.id}', this)">✓ Betaald</button>
+            </td>
+        </tr>`;
+    }).join("");
+}
+
+async function markPaidBtn(recordId, btn) {
+    btn.disabled = true;
+    btn.textContent = "...";
+    const res = await fetch(`/api/declarations/${recordId}/paid`, { method: "POST" });
+    if (res.status === 403) { checkAdminAccess(); return; }
+    await loadAdmin();
+}
+
+async function sepaExportDownload() {
+    const approved = allDeclarations.filter(r => r.fields.Status === "Goedgekeurd");
+    if (!approved.length) {
+        alert("Geen goedgekeurde declaraties om te exporteren.");
+        return;
+    }
+    const res = await fetch("/api/sepa-export");
+    if (res.status === 403) { checkAdminAccess(); return; }
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Export mislukt: " + (err.error || "onbekend"));
+        return;
+    }
+    const exportedIds = (res.headers.get("X-Record-Ids") || "").split(",").filter(Boolean);
+    const skippedCount = Number(res.headers.get("X-Skipped-Count") || 0);
+
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "sepa-" + new Date().toISOString().slice(0, 10) + ".xml";
+    a.click();
+    URL.revokeObjectURL(a.href);
+
+    const exported = approved.filter(r => exportedIds.includes(r.id));
+    const total = exported.reduce((s, r) => s + (r.fields.Bedrag || 0), 0);
+    let msg = `SEPA-bestand gedownload (${exported.length} betalingen, ${euro(total)}).`;
+    if (skippedCount > 0) msg += `\n\nLet op: ${skippedCount} declaratie(s) overgeslagen wegens ongeldig IBAN (rood gemarkeerd in de lijst).`;
+    msg += "\n\nMarkeer de geëxporteerde declaraties nu als Betaald?";
+
+    if (confirm(msg)) {
+        for (const r of exported) {
+            await fetch(`/api/declarations/${r.id}/paid`, { method: "POST" });
+        }
+        await loadAdmin();
+    }
 }
 
 // ── Overview ──────────────────────────────────────────────────
@@ -544,11 +792,16 @@ function renderClubGrid() {
     grid.innerHTML = CLUBS.map(club => {
         const records = allDeclarations.filter(r => r.fields.Club === club);
         const total = records.reduce((s, r) => s + (r.fields.Bedrag || 0), 0);
+        const rest = clubBudget(club) - clubSpent(club);
         return `<div class="club-card" onclick="showClub('${club.replace(/'/g,"\\'")}')">
             <h2>${club}</h2>
             <div class="club-stats">
                 <div><div class="stat-label">Declaraties</div><div class="stat-value">${records.length}</div></div>
-                <div><div class="stat-label">Totaal</div><div class="stat-value amount">€ ${total.toFixed(2).replace(".",",")}</div></div>
+                <div><div class="stat-label">Totaal gedeclareerd</div><div class="stat-value amount">${euro(total)}</div></div>
+            </div>
+            <div class="club-pot">
+                <span class="pot-label">Nog in de pot: </span>
+                <span class="pot-value ${rest < 0 ? "negative" : ""}">${euro(rest)}</span>
             </div>
         </div>`;
     }).join("");
@@ -636,7 +889,7 @@ async function approve(recordId, btn) {
         if (res.ok) {
             const record = data.record;
             const f = record.fields;
-            showQr({
+            showPayment({
                 naam: f.Naam,
                 iban: f.IBAN,
                 bedrag: f.Bedrag,
@@ -666,57 +919,40 @@ async function reject(recordId) {
     await loadAdmin();
 }
 
-// ── EPC QR code ───────────────────────────────────────────────
-function buildEpcPayload({ naam, iban, bedrag, referentie }) {
-    // EU EPC QR code standard (EPC069-12)
-    const ibanClean = (iban || "").replace(/\s+/g, "").toUpperCase();
-    const amount = `EUR${parseFloat(bedrag).toFixed(2)}`;
-    const name = (naam || "").substring(0, 70);
-    const ref = (referentie || "").substring(0, 140);
-
-    return [
-        "BCD",       // Service Tag
-        "002",       // Version
-        "1",         // Character set: UTF-8
-        "SCT",       // SEPA Credit Transfer
-        "",          // BIC (optional)
-        name,        // Beneficiary name
-        ibanClean,   // Beneficiary IBAN
-        amount,      // Amount
-        "",          // Purpose (optional)
-        "",          // Structured reference (optional)
-        ref,         // Unstructured remittance info
-    ].join("\n");
+// ── Betaalkaartje ─────────────────────────────────────────────
+function payRow(label, value, copyValue) {
+    const safe = String(copyValue ?? value).replace(/"/g, "&quot;");
+    return `<div class="pay-row">
+        <div><span class="pay-label">${label}</span><span class="pay-value">${value}</span></div>
+        <button class="btn-copy" onclick="copyToClipboard(this, &quot;${safe}&quot;)">Kopieer</button>
+    </div>`;
 }
 
-function showQr({ naam, iban, bedrag, referentie, omschrijving, club }) {
-    const payload = buildEpcPayload({ naam, iban, bedrag, referentie });
-
-    document.getElementById("qr-ref-display").textContent = referentie;
-    document.getElementById("qr-details").innerHTML = `
-        <div><strong>Ontvanger:</strong> ${naam}</div>
-        <div><strong>IBAN:</strong> ${iban}</div>
-        <div><strong>Bedrag:</strong> € ${parseFloat(bedrag).toFixed(2).replace(".",",")}</div>
-        <div><strong>Club:</strong> ${club}</div>
-        <div><strong>Omschrijving:</strong> ${omschrijving}</div>
-    `;
-
-    const qrContainer = document.getElementById("qr-canvas");
-    if (typeof qrcode === "undefined") {
-        qrContainer.innerHTML = "";
-        document.getElementById("qr-details").innerHTML =
-            '<div class="error-msg">QR-bibliotheek kon niet laden. Maak de betaling handmatig over met bovenstaande referentie.</div>'
-            + document.getElementById("qr-details").innerHTML;
-    } else {
-        if (qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs["UTF-8"]) {
-            qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"];
-        }
-        const qr = qrcode(0, "M");
-        qr.addData(payload, "Byte");
-        qr.make();
-        qrContainer.innerHTML = qr.createImgTag(5, 8);
+async function copyToClipboard(btn, text) {
+    try {
+        await navigator.clipboard.writeText(text);
+    } catch {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
     }
+    btn.textContent = "✓ Gekopieerd";
+    btn.classList.add("copied");
+    setTimeout(() => { btn.textContent = "Kopieer"; btn.classList.remove("copied"); }, 2000);
+}
 
+function showPayment({ naam, iban, bedrag, referentie, omschrijving, club }) {
+    document.getElementById("qr-ref-display").textContent = referentie || "–";
+    const amount = parseFloat(bedrag).toFixed(2);
+    document.getElementById("pay-rows").innerHTML =
+        payRow("Ontvanger", naam) +
+        payRow("IBAN", iban) +
+        payRow("Bedrag", "€ " + amount.replace(".", ","), amount) +
+        payRow("Omschrijving (referentie)", referentie || "–") +
+        `<div class="pay-row"><div><span class="pay-label">Club</span><span class="pay-value">${club || "–"}</span></div></div>`;
     document.getElementById("qr-overlay").style.display = "flex";
 }
 

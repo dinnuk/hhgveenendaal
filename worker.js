@@ -4,6 +4,10 @@ const PASSWORD = "jeugdwerk";
 const COOKIE_NAME = "hhg_auth";
 const ADMIN_PASSWORD = "penningmeester";
 const ADMIN_COOKIE = "hhg_admin";
+const CLUBS_TABLE = "Clubs";
+const DEBTOR_NAME = "HHG Veenendaal";
+const DEBTOR_IBAN = "NL50RABO0309378133";
+const DEBTOR_BIC = "RABONL2U";
 
 const loginPage = `<!DOCTYPE html>
 <html lang="nl">
@@ -232,6 +236,138 @@ async function approveDeclaration(recordId, env) {
     });
 }
 
+async function markPaid(recordId, env) {
+    const res = await fetch(
+        `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(env.AIRTABLE_TABLE_NAME)}/${recordId}`,
+        {
+            method: "PATCH",
+            headers: {
+                Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ fields: { Status: "Betaald" }, typecast: true }),
+        }
+    );
+    const updated = await res.json();
+    return new Response(JSON.stringify({ success: res.ok, record: updated }), {
+        headers: { "Content-Type": "application/json" },
+    });
+}
+
+async function getClubs(env) {
+    const res = await fetch(
+        `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${CLUBS_TABLE}`,
+        { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } }
+    );
+    const data = await res.json();
+    return new Response(JSON.stringify(data), {
+        headers: { "Content-Type": "application/json" },
+    });
+}
+
+async function updateClub(recordId, request, env) {
+    const body = await request.json().catch(() => ({}));
+    const fields = {};
+    if (body.leden != null) fields.Leden = Number(body.leden);
+    if (body.contributie != null) fields.Contributie = Number(body.contributie);
+
+    const res = await fetch(
+        `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${CLUBS_TABLE}/${recordId}`,
+        {
+            method: "PATCH",
+            headers: {
+                Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ fields }),
+        }
+    );
+    const updated = await res.json();
+    return new Response(JSON.stringify({ success: res.ok, record: updated }), {
+        headers: { "Content-Type": "application/json" },
+    });
+}
+
+function xmlEscape(s) {
+    return String(s || "").replace(/[<>&"']/g, c => ({
+        "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;",
+    }[c]));
+}
+
+async function sepaExport(env) {
+    // Alle goedgekeurde declaraties ophalen
+    const res = await fetch(
+        `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(env.AIRTABLE_TABLE_NAME)}?filterByFormula=({Status}="Goedgekeurd")`,
+        { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } }
+    );
+    const data = await res.json();
+    const all = (data.records || []).filter(r => r.fields.Bedrag > 0);
+    const records = all.filter(r => isValidIban(r.fields.IBAN));
+    const skipped = all.filter(r => !isValidIban(r.fields.IBAN));
+
+    if (records.length === 0) {
+        return new Response(JSON.stringify({ error: "Geen goedgekeurde declaraties met geldig IBAN om te exporteren" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
+    const now = new Date();
+    const stamp = now.toISOString().replace(/[-:]/g, "").slice(0, 15);
+    const msgId = `HHG-EXPORT-${stamp}`;
+    const execDate = now.toISOString().slice(0, 10);
+    const total = records.reduce((s, r) => s + r.fields.Bedrag, 0).toFixed(2);
+
+    const txs = records.map(r => {
+        const f = r.fields;
+        const ref = f.Referentie || r.id;
+        const remit = `${ref} ${f.Omschrijving || ""}`.trim().substring(0, 140);
+        return `      <CdtTrfTxInf>
+        <PmtId><EndToEndId>${xmlEscape(ref)}</EndToEndId></PmtId>
+        <Amt><InstdAmt Ccy="EUR">${f.Bedrag.toFixed(2)}</InstdAmt></Amt>
+        <Cdtr><Nm>${xmlEscape(f.Naam)}</Nm></Cdtr>
+        <CdtrAcct><Id><IBAN>${xmlEscape(f.IBAN)}</IBAN></Id></CdtrAcct>
+        <RmtInf><Ustrd>${xmlEscape(remit)}</Ustrd></RmtInf>
+      </CdtTrfTxInf>`;
+    }).join("\n");
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03">
+  <CstmrCdtTrfInitn>
+    <GrpHdr>
+      <MsgId>${msgId}</MsgId>
+      <CreDtTm>${now.toISOString().slice(0, 19)}</CreDtTm>
+      <NbOfTxs>${records.length}</NbOfTxs>
+      <CtrlSum>${total}</CtrlSum>
+      <InitgPty><Nm>${xmlEscape(DEBTOR_NAME)}</Nm></InitgPty>
+    </GrpHdr>
+    <PmtInf>
+      <PmtInfId>${msgId}-1</PmtInfId>
+      <PmtMtd>TRF</PmtMtd>
+      <BtchBookg>false</BtchBookg>
+      <NbOfTxs>${records.length}</NbOfTxs>
+      <CtrlSum>${total}</CtrlSum>
+      <PmtTpInf><SvcLvl><Cd>SEPA</Cd></SvcLvl></PmtTpInf>
+      <ReqdExctnDt>${execDate}</ReqdExctnDt>
+      <Dbtr><Nm>${xmlEscape(DEBTOR_NAME)}</Nm></Dbtr>
+      <DbtrAcct><Id><IBAN>${DEBTOR_IBAN}</IBAN></Id></DbtrAcct>
+      <DbtrAgt><FinInstnId><BIC>${DEBTOR_BIC}</BIC></FinInstnId></DbtrAgt>
+      <ChrgBr>SLEV</ChrgBr>
+${txs}
+    </PmtInf>
+  </CstmrCdtTrfInitn>
+</Document>`;
+
+    return new Response(xml, {
+        headers: {
+            "Content-Type": "application/xml; charset=utf-8",
+            "Content-Disposition": `attachment; filename="sepa-${execDate}.xml"`,
+            "X-Record-Ids": records.map(r => r.id).join(","),
+            "X-Skipped-Count": String(skipped.length),
+        },
+    });
+}
+
 async function rejectDeclaration(recordId, env) {
     const updateRes = await fetch(
         `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(env.AIRTABLE_TABLE_NAME)}/${recordId}`,
@@ -302,18 +438,30 @@ export default {
                 return createDeclaration(request, env);
             }
 
-            // Approve/reject vereisen admin-rechten
+            if (path === "/api/clubs" && request.method === "GET") {
+                return getClubs(env);
+            }
+
+            // Admin-only routes
             const approveMatch = path.match(/^\/api\/declarations\/([^/]+)\/approve$/);
             const rejectMatch = path.match(/^\/api\/declarations\/([^/]+)\/reject$/);
-            if ((approveMatch || rejectMatch) && request.method === "POST") {
+            const paidMatch = path.match(/^\/api\/declarations\/([^/]+)\/paid$/);
+            const clubMatch = path.match(/^\/api\/clubs\/([^/]+)$/);
+            const isAdminRoute = approveMatch || rejectMatch || paidMatch ||
+                (clubMatch && request.method === "POST") || path === "/api/sepa-export";
+
+            if (isAdminRoute) {
                 if (!isAdmin(request)) {
                     return new Response(JSON.stringify({ error: "Admin-rechten vereist" }), {
                         status: 403,
                         headers: { "Content-Type": "application/json" },
                     });
                 }
-                if (approveMatch) return approveDeclaration(approveMatch[1], env);
-                return rejectDeclaration(rejectMatch[1], env);
+                if (approveMatch && request.method === "POST") return approveDeclaration(approveMatch[1], env);
+                if (rejectMatch && request.method === "POST") return rejectDeclaration(rejectMatch[1], env);
+                if (paidMatch && request.method === "POST") return markPaid(paidMatch[1], env);
+                if (clubMatch && request.method === "POST") return updateClub(clubMatch[1], request, env);
+                if (path === "/api/sepa-export" && request.method === "GET") return sepaExport(env);
             }
 
             return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
