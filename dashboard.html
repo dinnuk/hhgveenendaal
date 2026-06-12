@@ -59,20 +59,21 @@
             padding: 0 20px;
         }
 
-        /* Totaalbalk */
-        #totaal-banner {
-            background: #004b58; color: #fff;
-            border-radius: 6px; padding: 16px 20px;
-            margin-bottom: 20px;
-            display: flex; flex-wrap: wrap; gap: 20px; align-items: center;
+        /* Herkomst pot (KVD + contributie) */
+        .club-herkomst {
+            background: #faf9f8; border: 1px solid #e4e8e9; border-radius: 4px;
+            padding: 10px 12px; margin: 10px 0;
         }
-        .totaal-item { flex: 1; min-width: 120px; }
-        .totaal-label { font-size: 10px; color: #92aab0; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-        .totaal-value { font-size: 22px; font-weight: bold; }
-        .totaal-value.green { color: #7ec87e; }
-        .totaal-value.red { color: #ff8080; }
-        #totaal-bar-bg { background: rgba(255,255,255,0.15); border-radius: 6px; height: 6px; flex-basis: 100%; }
-        #totaal-bar-fill { height: 100%; border-radius: 6px; background: #7ec87e; transition: width 0.4s; }
+        .herkomst-row {
+            display: flex; justify-content: space-between;
+            font-size: 12px; line-height: 22px;
+        }
+        .herkomst-label { color: #63858e; }
+        .herkomst-val { color: #004b58; font-weight: bold; }
+        .herkomst-totaal {
+            border-top: 1px solid #dfe5e6; margin-top: 4px; padding-top: 4px;
+        }
+        .herkomst-totaal .herkomst-label { color: #004b58; font-weight: bold; }
 
         /* Club grid — rijkere kaarten */
         #club-grid {
@@ -148,21 +149,28 @@
         }
         .btn-cancel:hover { background: #f5f3f2; }
 
-        /* Table */
-        .table-wrap {
-            background: #fff; border: 1px solid #dfe5e6;
-            border-radius: 6px; box-shadow: 0 0 4px rgba(0,0,0,0.08);
-            overflow-x: auto; -webkit-overflow-scrolling: touch;
+        /* List view (geen horizontaal scrollen) */
+        .decl-list { display: flex; flex-direction: column; gap: 10px; }
+        .decl-item {
+            background: #fff; border: 1px solid #dfe5e6; border-radius: 6px;
+            box-shadow: 0 0 4px rgba(0,0,0,0.08); padding: 14px 16px;
         }
-        table { width: 100%; border-collapse: collapse; }
-        thead th {
-            background-color: #004b58; color: #fff; font-size: 12px;
-            font-weight: normal; text-align: left; padding: 10px 14px;
+        .decl-top {
+            display: flex; justify-content: space-between;
+            align-items: baseline; gap: 10px; flex-wrap: wrap;
         }
-        tbody tr { border-bottom: 1px solid #e4e8e9; }
-        tbody tr:last-child { border-bottom: none; }
-        tbody tr:hover { background-color: #faf9f8; }
-        tbody td { padding: 10px 14px; font-size: 12px; }
+        .decl-name { font-weight: bold; color: #004b58; font-size: 14px; }
+        .decl-amount { font-size: 16px; font-weight: bold; color: #035765; white-space: nowrap; }
+        .decl-meta { font-size: 11px; color: #92aab0; margin-top: 3px; }
+        .decl-desc { font-size: 12px; color: #4c4e4f; margin-top: 6px; }
+        .decl-iban { font-family: monospace; font-size: 11px; color: #63858e; margin-top: 4px; word-break: break-all; }
+        .decl-actions {
+            display: flex; gap: 8px; flex-wrap: wrap;
+            margin-top: 10px; align-items: center;
+        }
+        .decl-item.compact { padding: 10px 14px; }
+        .decl-item.compact .decl-name { font-size: 13px; }
+        .decl-item.compact .decl-amount { font-size: 14px; }
 
         .badge {
             display: inline-block; padding: 2px 8px;
@@ -341,8 +349,6 @@
         #form-status { min-height: 20px; }
 
         /* ── Responsive ──────────────────────────────────────── */
-        table { min-width: 640px; }
-
         @media (max-width: 700px) {
             #header { padding: 0 14px; height: auto; min-height: 52px; flex-wrap: wrap; }
             #header h1 { font-size: 14px; }
@@ -351,9 +357,6 @@
             .tab { padding: 10px 14px; white-space: nowrap; }
             #main { margin: 16px auto; padding: 0 12px; }
             #club-grid { grid-template-columns: 1fr; }
-            #totaal-banner { flex-direction: column; gap: 10px; }
-            .totaal-item { min-width: unset; }
-            .totaal-value { font-size: 18px; }
             .detail-header { flex-direction: column; align-items: stretch; gap: 10px; }
             .detail-header .btn-primary { width: 100%; }
             .form-row-2 { grid-template-columns: 1fr; }
@@ -362,7 +365,7 @@
             #qr-modal { width: 100%; }
             .qr-body { padding: 16px; }
             .admin-login-box { margin: 20px auto; }
-            thead th, tbody td { padding: 8px 10px; }
+            .decl-actions button { flex: 1; }
         }
     </style>
 </head>
@@ -386,26 +389,6 @@
     <!-- OVERZICHT TAB -->
     <div id="overzicht-tab">
         <div id="overview">
-            <!-- Totaalbalk -->
-            <div id="totaal-banner">
-                <div class="totaal-item">
-                    <div class="totaal-label">Totaal budget</div>
-                    <div class="totaal-value" id="tot-budget">–</div>
-                </div>
-                <div class="totaal-item">
-                    <div class="totaal-label">Besteed</div>
-                    <div class="totaal-value" id="tot-spent">–</div>
-                </div>
-                <div class="totaal-item">
-                    <div class="totaal-label">Nog beschikbaar</div>
-                    <div class="totaal-value green" id="tot-rest">–</div>
-                </div>
-                <div class="totaal-item">
-                    <div class="totaal-label">Te betalen (goedgekeurd)</div>
-                    <div class="totaal-value" id="tot-pending">–</div>
-                </div>
-                <div id="totaal-bar-bg"><div id="totaal-bar-fill"></div></div>
-            </div>
             <div id="club-grid"><div class="loading">Laden...</div></div>
         </div>
         <div id="club-detail">
@@ -414,18 +397,8 @@
                 <h2 id="detail-title"></h2>
                 <button class="btn-primary" onclick="openModal()">+ Nieuwe declaratie</button>
             </div>
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Naam</th><th>Datum</th><th>Bedrag</th>
-                            <th>Categorie</th><th>Omschrijving</th><th>Bonnetje</th><th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="declarations-tbody">
-                        <tr><td colspan="7" class="loading">Laden...</td></tr>
-                    </tbody>
-                </table>
+            <div id="declarations-list" class="decl-list">
+                <div class="loading">Laden...</div>
             </div>
         </div>
     </div>
@@ -452,51 +425,21 @@
         <div id="budget-grid" class="budget-grid"><div class="loading">Laden...</div></div>
 
         <div class="admin-section-title" style="margin-top:32px">Openstaande declaraties</div>
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Naam</th><th>Club</th><th>Datum</th><th>Bedrag</th>
-                        <th>Omschrijving</th><th>Bonnetje</th><th>IBAN</th><th>Acties</th>
-                    </tr>
-                </thead>
-                <tbody id="admin-tbody">
-                    <tr><td colspan="8" class="loading">Laden...</td></tr>
-                </tbody>
-            </table>
+        <div id="admin-list" class="decl-list">
+            <div class="loading">Laden...</div>
         </div>
 
         <div class="admin-section-title" style="margin-top:32px">
             Te betalen (goedgekeurd)
             <button class="btn-primary" style="float:right;font-size:12px;padding:6px 14px" onclick="sepaExportDownload()">⬇ SEPA-export (bank)</button>
         </div>
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Naam</th><th>Club</th><th>Bedrag</th><th>IBAN</th>
-                        <th>Referentie</th><th>Acties</th>
-                    </tr>
-                </thead>
-                <tbody id="topay-tbody">
-                    <tr><td colspan="6" class="loading">Laden...</td></tr>
-                </tbody>
-            </table>
+        <div id="topay-list" class="decl-list">
+            <div class="loading">Laden...</div>
         </div>
 
         <div class="admin-section-title" style="margin-top:32px">Alle declaraties</div>
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Naam</th><th>Club</th><th>Datum</th><th>Bedrag</th>
-                        <th>Status</th><th>Referentie</th>
-                    </tr>
-                </thead>
-                <tbody id="admin-all-tbody">
-                    <tr><td colspan="6" class="loading">Laden...</td></tr>
-                </tbody>
-            </table>
+        <div id="admin-all-list" class="decl-list">
+            <div class="loading">Laden...</div>
         </div>
         </div><!-- /admin-content -->
     </div>
@@ -765,31 +708,32 @@ async function saveClub(recordId, btn) {
 
 // ── Te betalen (admin) ────────────────────────────────────────
 function renderToPay(records) {
-    const tbody = document.getElementById("topay-tbody");
+    const list = document.getElementById("topay-list");
     if (!records.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Geen openstaande betalingen.</td></tr>';
+        list.innerHTML = '<div class="decl-item"><div class="empty-state">Geen openstaande betalingen.</div></div>';
         return;
     }
-    tbody.innerHTML = records.map(r => {
+    list.innerHTML = records.map(r => {
         const f = r.fields;
         const ibanOk = isValidIban(f.IBAN);
-        const ibanCell = ibanOk
-            ? `<code style="font-size:11px">${f.IBAN}</code>`
-            : `<code style="font-size:11px;color:#c00">${f.IBAN || "–"}</code> <span class="error-msg" style="font-size:10px">⚠ ongeldig</span>`;
-        return `<tr>
-            <td>${f.Naam || "–"}</td><td>${f.Club || "–"}</td>
-            <td>${euro(f.Bedrag)}</td>
-            <td>${ibanCell}</td>
-            <td><span class="ref-code">${f.Referentie || "–"}</span></td>
-            <td style="white-space:nowrap">
+        const ibanLine = ibanOk
+            ? `<div class="decl-iban">${f.IBAN}</div>`
+            : `<div class="decl-iban" style="color:#c00">${f.IBAN || "geen IBAN"} ⚠ ongeldig — wordt overgeslagen in SEPA-export</div>`;
+        return `<div class="decl-item">
+            <div class="decl-top">
+                <span class="decl-name">${f.Naam || "–"}</span>
+                <span class="decl-amount">${euro(f.Bedrag)}</span>
+            </div>
+            <div class="decl-meta">${f.Club || "–"} · <span class="ref-code">${f.Referentie || "–"}</span></div>
+            ${ibanLine}
+            <div class="decl-actions">
                 <button class="btn-copy" onclick='showPayment(${JSON.stringify({
                     naam: f.Naam, iban: f.IBAN, bedrag: f.Bedrag,
                     referentie: f.Referentie, omschrijving: f.Omschrijving, club: f.Club
                 }).replace(/'/g, "&#39;")})'>Betaalgegevens</button>
-                &nbsp;
                 <button class="btn-paid" onclick="markPaidBtn('${r.id}', this)">✓ Betaald</button>
-            </td>
-        </tr>`;
+            </div>
+        </div>`;
     }).join("");
 }
 
@@ -841,40 +785,19 @@ async function sepaExportDownload() {
 // ── Overview ──────────────────────────────────────────────────
 function renderClubGrid() {
     const grid = document.getElementById("club-grid");
-
-    // Totalen voor banner
-    let totBudget = 0, totSpent = 0, totPending = 0;
-    CLUBS.forEach(club => {
-        totBudget += clubBudget(club);
-        totSpent  += clubSpent(club);
-        totPending += allDeclarations
-            .filter(r => r.fields.Club === club && r.fields.Status === "Goedgekeurd")
-            .reduce((s, r) => s + (r.fields.Bedrag || 0), 0);
-    });
-    const totRest = totBudget - totSpent;
-    const pctTotal = totBudget > 0 ? Math.min(100, (totSpent / totBudget) * 100) : 0;
-
-    document.getElementById("tot-budget").textContent = euro(totBudget);
-    document.getElementById("tot-spent").textContent  = euro(totSpent);
-    document.getElementById("tot-pending").textContent = euro(totPending);
-    const restEl = document.getElementById("tot-rest");
-    restEl.textContent = euro(totRest);
-    restEl.className = "totaal-value " + (totRest < 0 ? "red" : "green");
-    document.getElementById("totaal-bar-fill").style.width = pctTotal + "%";
-    document.getElementById("totaal-bar-fill").style.background = totRest < 0 ? "#ff8080" : pctTotal > 80 ? "#ffd080" : "#7ec87e";
-
-    // Club-kaarten
     grid.innerHTML = CLUBS.map(club => {
         const records = allDeclarations.filter(r => r.fields.Club === club);
         const rec = clubRecord(club);
         const leden = rec?.fields.Leden || 0;
-        const budget = clubBudget(club);
+        const tarief = RATES[club] || 0;
+        const kvd = leden * tarief;
+        const contributie = rec?.fields.Contributie || 0;
+        const budget = kvd + contributie;
         const spent  = clubSpent(club);
         const pending = records.filter(r => r.fields.Status === "Ingediend").reduce((s, r) => s + (r.fields.Bedrag || 0), 0);
         const rest   = budget - spent;
         const pct    = budget > 0 ? Math.min(100, (spent / budget) * 100) : (spent > 0 ? 100 : 0);
         const barClass = rest < 0 ? "over" : (pct > 80 ? "warn" : "");
-        const tarief = RATES[club] || 0;
 
         return `<div class="club-card" onclick="showClub('${club.replace(/'/g,"\\'")}')">
             <div class="club-card-header">
@@ -894,11 +817,22 @@ function renderClubGrid() {
                 <div class="club-bar-fill ${barClass}" style="width:${pct.toFixed(1)}%"></div>
             </div>
 
-            <div class="club-stats-row">
-                <div class="club-stat">
-                    <div class="stat-label">Budget</div>
-                    <div class="stat-val">${euro(budget)}</div>
+            <div class="club-herkomst">
+                <div class="herkomst-row">
+                    <span class="herkomst-label">⛪ Bijdrage KVD (kerk)</span>
+                    <span class="herkomst-val">${euro(kvd)}</span>
                 </div>
+                <div class="herkomst-row">
+                    <span class="herkomst-label">🪙 Opgehaalde contributie</span>
+                    <span class="herkomst-val">${euro(contributie)}</span>
+                </div>
+                <div class="herkomst-row herkomst-totaal">
+                    <span class="herkomst-label">Totaal in de pot</span>
+                    <span class="herkomst-val">${euro(budget)}</span>
+                </div>
+            </div>
+
+            <div class="club-stats-row">
                 <div class="club-stat">
                     <div class="stat-label">Besteed</div>
                     <div class="stat-val">${euro(spent)}</div>
@@ -930,56 +864,76 @@ function showOverview() {
 }
 
 function renderDeclarations(records) {
-    const tbody = document.getElementById("declarations-tbody");
+    const list = document.getElementById("declarations-list");
     if (!records.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Nog geen declaraties.</td></tr>';
+        list.innerHTML = '<div class="decl-item"><div class="empty-state">Nog geen declaraties.</div></div>';
         return;
     }
-    tbody.innerHTML = records.sort((a,b) => (b.fields.Datum||"").localeCompare(a.fields.Datum||"")).map(r => {
+    list.innerHTML = records.sort((a,b) => (b.fields.Datum||"").localeCompare(a.fields.Datum||"")).map(r => {
         const f = r.fields;
         const datum = f.Datum ? new Date(f.Datum).toLocaleDateString("nl-NL") : "–";
-        const bedrag = f.Bedrag != null ? `€ ${f.Bedrag.toFixed(2).replace(".",",")}` : "–";
         const badge = `<span class="badge badge-${(f.Status||"Ingediend").toLowerCase()}">${f.Status||"Ingediend"}</span>`;
-        const bonnetje = f.Bonnetje?.length ? `<a class="link-bonnetje" href="${f.Bonnetje[0].url}" target="_blank">Bekijken</a>` : "–";
-        return `<tr><td>${f.Naam||"–"}</td><td>${datum}</td><td>${bedrag}</td><td>${f.Categorie||"–"}</td><td>${f.Omschrijving||"–"}</td><td>${bonnetje}</td><td>${badge}</td></tr>`;
+        const bonnetje = f.Bonnetje?.length ? ` · <a class="link-bonnetje" href="${f.Bonnetje[0].url}" target="_blank">📎 Bonnetje</a>` : "";
+        return `<div class="decl-item">
+            <div class="decl-top">
+                <span class="decl-name">${f.Naam || "–"} ${badge}</span>
+                <span class="decl-amount">${euro(f.Bedrag)}</span>
+            </div>
+            <div class="decl-meta">${datum} · ${f.Categorie || "–"}${bonnetje}</div>
+            <div class="decl-desc">${f.Omschrijving || ""}</div>
+        </div>`;
     }).join("");
 }
 
 // ── Admin ─────────────────────────────────────────────────────
 function renderAdminPending(records) {
-    const tbody = document.getElementById("admin-tbody");
+    const list = document.getElementById("admin-list");
     if (!records.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Geen openstaande declaraties.</td></tr>';
+        list.innerHTML = '<div class="decl-item"><div class="empty-state">Geen openstaande declaraties.</div></div>';
         return;
     }
-    tbody.innerHTML = records.map(r => {
+    list.innerHTML = records.map(r => {
         const f = r.fields;
         const datum = f.Datum ? new Date(f.Datum).toLocaleDateString("nl-NL") : "–";
-        const bedrag = f.Bedrag != null ? `€ ${f.Bedrag.toFixed(2).replace(".",",")}` : "–";
-        const bonnetje = f.Bonnetje?.length ? `<a class="link-bonnetje" href="${f.Bonnetje[0].url}" target="_blank">Bekijken</a>` : "–";
-        const iban = f.IBAN || "–";
-        return `<tr>
-            <td>${f.Naam||"–"}</td><td>${f.Club||"–"}</td><td>${datum}</td>
-            <td>${bedrag}</td><td>${f.Omschrijving||"–"}</td><td>${bonnetje}</td>
-            <td><code style="font-size:11px">${iban}</code></td>
-            <td style="white-space:nowrap">
+        const bonnetje = f.Bonnetje?.length ? ` · <a class="link-bonnetje" href="${f.Bonnetje[0].url}" target="_blank">📎 Bonnetje</a>` : "";
+        const ibanOk = isValidIban(f.IBAN);
+        const ibanLine = ibanOk
+            ? `<div class="decl-iban">${f.IBAN}</div>`
+            : `<div class="decl-iban" style="color:#c00">${f.IBAN || "geen IBAN"} ⚠ ongeldig</div>`;
+        return `<div class="decl-item">
+            <div class="decl-top">
+                <span class="decl-name">${f.Naam || "–"}</span>
+                <span class="decl-amount">${euro(f.Bedrag)}</span>
+            </div>
+            <div class="decl-meta">${f.Club || "–"} · ${datum} · ${f.Categorie || "–"}${bonnetje}</div>
+            <div class="decl-desc">${f.Omschrijving || ""}</div>
+            ${ibanLine}
+            <div class="decl-actions">
                 <button class="btn-approve" onclick="approve('${r.id}', this)">Goedkeuren</button>
-                &nbsp;
                 <button class="btn-reject" onclick="reject('${r.id}')">Afkeuren</button>
-            </td>
-        </tr>`;
+            </div>
+        </div>`;
     }).join("");
 }
 
 function renderAdminAll(records) {
-    const tbody = document.getElementById("admin-all-tbody");
-    tbody.innerHTML = records.sort((a,b) => (b.fields.Datum||"").localeCompare(a.fields.Datum||"")).map(r => {
+    const list = document.getElementById("admin-all-list");
+    if (!records.length) {
+        list.innerHTML = '<div class="decl-item"><div class="empty-state">Nog geen declaraties.</div></div>';
+        return;
+    }
+    list.innerHTML = records.sort((a,b) => (b.fields.Datum||"").localeCompare(a.fields.Datum||"")).map(r => {
         const f = r.fields;
         const datum = f.Datum ? new Date(f.Datum).toLocaleDateString("nl-NL") : "–";
-        const bedrag = f.Bedrag != null ? `€ ${f.Bedrag.toFixed(2).replace(".",",")}` : "–";
         const badge = `<span class="badge badge-${(f.Status||"ingediend").toLowerCase()}">${f.Status||"Ingediend"}</span>`;
-        const ref = f.Referentie ? `<span class="ref-code">${f.Referentie}</span>` : "–";
-        return `<tr><td>${f.Naam||"–"}</td><td>${f.Club||"–"}</td><td>${datum}</td><td>${bedrag}</td><td>${badge}</td><td>${ref}</td></tr>`;
+        const ref = f.Referentie ? ` · <span class="ref-code">${f.Referentie}</span>` : "";
+        return `<div class="decl-item compact">
+            <div class="decl-top">
+                <span class="decl-name">${f.Naam || "–"} ${badge}</span>
+                <span class="decl-amount">${euro(f.Bedrag)}</span>
+            </div>
+            <div class="decl-meta">${f.Club || "–"} · ${datum}${ref}</div>
+        </div>`;
     }).join("");
 }
 
