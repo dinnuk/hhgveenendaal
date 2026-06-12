@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HHG Veenendaal – Declaraties</title>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -380,9 +380,6 @@
 </div>
 
 <!-- QR betaalverzoek modal -->
-<div id="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:200;align-items:center;justify-content:center;" id="qr-overlay">
-    <div id="qr-modal"></div>
-</div>
 <div id="qr-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:200;align-items:center;justify-content:center;">
     <div id="qr-modal">
         <div class="modal-header">
@@ -392,7 +389,7 @@
         <div class="qr-body">
             <p style="color:#92aab0;font-size:12px;margin-bottom:16px">Scan met uw bankieren-app om direct te betalen</p>
             <div class="qr-ref" id="qr-ref-display"></div>
-            <canvas id="qr-canvas"></canvas>
+            <div id="qr-canvas"></div>
             <div class="qr-details" id="qr-details"></div>
         </div>
         <div class="modal-footer">
@@ -512,7 +509,7 @@ function renderAdminPending(records) {
             <td>${bedrag}</td><td>${f.Omschrijving||"–"}</td><td>${bonnetje}</td>
             <td><code style="font-size:11px">${iban}</code></td>
             <td style="white-space:nowrap">
-                <button class="btn-approve" onclick="approve('${r.id}')">Goedkeuren</button>
+                <button class="btn-approve" onclick="approve('${r.id}', this)">Goedkeuren</button>
                 &nbsp;
                 <button class="btn-reject" onclick="reject('${r.id}')">Afkeuren</button>
             </td>
@@ -532,8 +529,7 @@ function renderAdminAll(records) {
     }).join("");
 }
 
-async function approve(recordId) {
-    const btn = event.target;
+async function approve(recordId, btn) {
     btn.disabled = true;
     btn.textContent = "Bezig...";
 
@@ -591,7 +587,6 @@ function buildEpcPayload({ naam, iban, bedrag, referentie }) {
         "",          // Purpose (optional)
         "",          // Structured reference (optional)
         ref,         // Unstructured remittance info
-        "",          // Beneficiary to originator info
     ].join("\n");
 }
 
@@ -607,10 +602,21 @@ function showQr({ naam, iban, bedrag, referentie, omschrijving, club }) {
         <div><strong>Omschrijving:</strong> ${omschrijving}</div>
     `;
 
-    const canvas = document.getElementById("qr-canvas");
-    QRCode.toCanvas(canvas, payload, { width: 256, margin: 2, errorCorrectionLevel: "M" }, err => {
-        if (err) console.error(err);
-    });
+    const qrContainer = document.getElementById("qr-canvas");
+    if (typeof qrcode === "undefined") {
+        qrContainer.innerHTML = "";
+        document.getElementById("qr-details").innerHTML =
+            '<div class="error-msg">QR-bibliotheek kon niet laden. Maak de betaling handmatig over met bovenstaande referentie.</div>'
+            + document.getElementById("qr-details").innerHTML;
+    } else {
+        if (qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs["UTF-8"]) {
+            qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"];
+        }
+        const qr = qrcode(0, "M");
+        qr.addData(payload, "Byte");
+        qr.make();
+        qrContainer.innerHTML = qr.createImgTag(5, 8);
+    }
 
     document.getElementById("qr-overlay").style.display = "flex";
 }

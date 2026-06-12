@@ -130,22 +130,39 @@ async function createDeclaration(request, env) {
     const created = await createRes.json();
     const recordId = created.id;
 
+    let attachmentWarning = null;
     if (bonnetje && bonnetje.size > 0) {
-        const uploadForm = new FormData();
-        uploadForm.append("file", bonnetje, bonnetje.name || "bonnetje");
-        uploadForm.append("filename", bonnetje.name || "bonnetje");
+        // Airtable Content API expects JSON with base64-encoded file (max 5 MB)
+        const bytes = new Uint8Array(await bonnetje.arrayBuffer());
+        let binary = "";
+        const chunkSize = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+        }
 
-        await fetch(
+        const uploadRes = await fetch(
             `https://content.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${recordId}/Bonnetje/uploadAttachment`,
             {
                 method: "POST",
-                headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` },
-                body: uploadForm,
+                headers: {
+                    Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    contentType: bonnetje.type || "application/octet-stream",
+                    file: btoa(binary),
+                    filename: bonnetje.name || "bonnetje",
+                }),
             }
         );
+
+        if (!uploadRes.ok) {
+            const err = await uploadRes.json().catch(() => ({}));
+            attachmentWarning = err.error?.message || "Bonnetje uploaden mislukt";
+        }
     }
 
-    return new Response(JSON.stringify({ success: true, id: recordId }), {
+    return new Response(JSON.stringify({ success: true, id: recordId, attachmentWarning }), {
         headers: { "Content-Type": "application/json" },
     });
 }
