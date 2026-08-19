@@ -75,8 +75,52 @@
         }
         .herkomst-totaal .herkomst-label { color: #004b58; font-weight: bold; }
 
-        /* Club grid — rijkere kaarten */
+        /* Homepage tiles — bewust minimaal */
         #club-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 14px;
+        }
+        .club-tile {
+            position: relative;
+            background: #fff; border: 1px solid #dfe5e6; border-radius: 6px;
+            box-shadow: 0 0 4px rgba(0,0,0,0.08);
+            padding: 22px 40px 22px 22px; cursor: pointer;
+            transition: box-shadow .15s, border-color .15s;
+        }
+        .club-tile:hover { box-shadow: 0 2px 10px rgba(0,75,88,.15); border-color: #63858e; }
+        .club-tile h2 { color: #004b58; font-size: 15px; margin-bottom: 5px; }
+        .tile-meta { font-size: 12px; color: #92aab0; }
+        .tile-arrow {
+            position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
+            color: #92aab0; font-size: 22px; line-height: 1;
+        }
+        .club-tile:hover .tile-arrow { color: #035765; }
+
+        /* Clubpagina: statuskaart */
+        .status-card {
+            background: #fff; border: 1px solid #dfe5e6; border-radius: 6px;
+            box-shadow: 0 0 4px rgba(0,0,0,.08); padding: 20px; margin-bottom: 26px;
+        }
+        .section-head {
+            display: flex; align-items: baseline; justify-content: space-between;
+            gap: 10px; flex-wrap: wrap; margin-bottom: 12px;
+        }
+        .section-head h3 { color: #004b58; font-size: 15px; }
+        .section-sub { font-size: 12px; color: #63858e; }
+        .herkomst-calc { font-size: 10px; color: #92aab0; font-weight: normal; margin-left: 4px; }
+
+        /* Aanmeldlink */
+        .aanmeld-link {
+            background: #e8f4f0; border: 1px solid #cfe3dd; border-radius: 6px;
+            padding: 12px 14px; display: flex; align-items: center;
+            justify-content: space-between; gap: 12px; flex-wrap: wrap;
+        }
+        .link-label { display: block; font-size: 11px; color: #63858e; margin-bottom: 2px; }
+        .link-url { font-size: 12px; color: #004b58; font-family: monospace; word-break: break-all; }
+
+        /* Club grid — rijkere kaarten (clubpagina) */
+        .club-cards-legacy {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
             gap: 16px;
@@ -206,6 +250,16 @@
             padding: 7px 12px; font-size: 11px; cursor: pointer;
         }
         .budget-inputs button:hover { background: #035765; }
+        .aanmeld-stat {
+            font-size: 11px; color: #63858e; background: #f5f3f2;
+            border-radius: 4px; padding: 6px 9px; margin-bottom: 10px;
+        }
+        .betaallink-row { margin-bottom: 12px; }
+        .betaallink-row label { font-size: 10px; color: #92aab0; display: block; margin-bottom: 3px; }
+        .betaallink-row input {
+            width: 100%; padding: 6px 8px; border: 1px solid #dfe5e6;
+            border-radius: 4px; font-size: 11px; font-family: monospace;
+        }
         .budget-bar-bg {
             background: #eeeded; border-radius: 6px; height: 10px;
             overflow: hidden; margin: 8px 0 6px;
@@ -348,7 +402,7 @@
         .success-msg { color: #2a7a2a; font-size: 12px; margin-top: 8px; }
         #form-status { min-height: 20px; }
 
-        /* ── Responsive ──────────────────────────────────────── */
+        /* ─── Responsive ─── */
         @media (max-width: 700px) {
             #header { padding: 0 14px; height: auto; min-height: 52px; flex-wrap: wrap; }
             #header h1 { font-size: 14px; }
@@ -396,6 +450,21 @@
             <div class="detail-header">
                 <h2 id="detail-title"></h2>
                 <button class="btn-primary" onclick="openModal()">+ Nieuwe declaratie</button>
+            </div>
+
+            <!-- Budgetstatus van deze club -->
+            <div id="club-status"></div>
+
+            <!-- Leden -->
+            <div class="section-head">
+                <h3>Leden</h3>
+                <span id="leden-summary" class="section-sub"></span>
+            </div>
+            <div id="leden-list" class="decl-list"></div>
+
+            <!-- Declaraties -->
+            <div class="section-head" style="margin-top:26px">
+                <h3>Declaraties</h3>
             </div>
             <div id="declarations-list" class="decl-list">
                 <div class="loading">Laden...</div>
@@ -549,8 +618,19 @@ const RATES = {
     "JV Brea": 30,
 };
 
+const SLUGS = {
+    "Meisjes groep 5 & 6": "meisjes-5-6",
+    "Jongens groep 5 & 6": "jongens-5-6",
+    "Meisjes groep 7 & 8": "meisjes-7-8",
+    "Jongens groep 7 & 8": "jongens-7-8",
+    "Tienerclub": "tienerclub",
+    "JV Brea": "jv-brea",
+};
+
 let allDeclarations = [];
 let clubsData = [];
+let allLeden = [];
+let isAdminUser = false;
 let currentClub = null;
 let currentTab = "overzicht";
 
@@ -575,7 +655,7 @@ function clubSpent(club) {
         .reduce((s, r) => s + (r.fields.Bedrag || 0), 0);
 }
 
-// ── Tab switching ──────────────────────────────────────────────
+// ─── Tab switching ───
 function switchTab(tab) {
     currentTab = tab;
     document.querySelectorAll(".tab").forEach((t, i) => {
@@ -586,7 +666,7 @@ function switchTab(tab) {
     if (tab === "admin") checkAdminAccess();
 }
 
-// ── Admin auth ────────────────────────────────────────────────
+// ─── Admin auth ───
 async function checkAdminAccess() {
     const res = await fetch("/api/admin-check");
     const data = await res.json();
@@ -611,7 +691,7 @@ async function adminLogin(e) {
     }
 }
 
-// ── IBAN validatie (mod-97, zelfde logica als server) ─────────
+// ─── IBAN validatie (mod-97, zelfde logica als server) ───
 const IBAN_LENGTHS = { NL: 18, BE: 16, DE: 22, FR: 27, GB: 22, ES: 24, IT: 27, LU: 20, AT: 20, CH: 21 };
 
 function isValidIban(input) {
@@ -628,14 +708,18 @@ function isValidIban(input) {
     return remainder === 1;
 }
 
-// ── Data loading ──────────────────────────────────────────────
+// ─── Data loading ───
 async function fetchData() {
-    const [declRes, clubRes] = await Promise.all([
+    const [declRes, clubRes, ledenRes, adminRes] = await Promise.all([
         fetch("/api/declarations"),
         fetch("/api/clubs"),
+        fetch("/api/leden"),
+        fetch("/api/admin-check"),
     ]);
     allDeclarations = (await declRes.json()).records || [];
     clubsData = (await clubRes.json()).records || [];
+    allLeden = (await ledenRes.json()).records || [];
+    isAdminUser = (await adminRes.json()).admin === true;
 }
 
 async function loadAll() {
@@ -655,7 +739,7 @@ async function loadAdmin() {
     renderAdminAll(allDeclarations);
 }
 
-// ── Budget dashboard (admin) ──────────────────────────────────
+// ─── Budget dashboard (admin) ───
 function renderBudgetGrid() {
     const grid = document.getElementById("budget-grid");
     grid.innerHTML = CLUBS.map(club => {
@@ -667,11 +751,18 @@ function renderBudgetGrid() {
         const rest = budget - spent;
         const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : (spent > 0 ? 100 : 0);
         const barClass = rest < 0 ? "over" : (pct > 80 ? "warn" : "");
+        const clubLeden = allLeden.filter(l => l.fields.Club === club);
+        const betaaldCount = clubLeden.filter(l => l.fields.Betaald).length;
+        const betaallink = rec?.fields.Betaallink || "";
         return `<div class="budget-card">
             <h3>${club} <span class="budget-rate">(${euro(RATES[club])} p/lid)</span></h3>
+            <div class="aanmeld-stat">
+                ${clubLeden.length} aanmelding${clubLeden.length !== 1 ? "en" : ""} via het formulier ·
+                <strong>${betaaldCount} betaald</strong>
+            </div>
             <div class="budget-inputs">
                 <div>
-                    <label>Leden</label>
+                    <label>Leden (voor KVD-bijdrage)</label>
                     <input type="number" min="0" step="1" id="leden-${rec?.id}" value="${leden}">
                 </div>
                 <div>
@@ -679,6 +770,10 @@ function renderBudgetGrid() {
                     <input type="number" min="0" step="0.01" id="contributie-${rec?.id}" value="${contributie}">
                 </div>
                 <button onclick="saveClub('${rec?.id}', this)">Opslaan</button>
+            </div>
+            <div class="betaallink-row">
+                <label>Rabo-betaallink (ouders zien deze na aanmelding)</label>
+                <input type="url" id="betaallink-${rec?.id}" value="${betaallink}" placeholder="https://betaalverzoek.rabobank.nl/...">
             </div>
             <div class="budget-rest ${rest < 0 ? "negative" : ""}">${euro(rest)} <span style="font-size:11px;font-weight:normal;color:#92aab0">in de pot</span></div>
             <div class="budget-bar-bg"><div class="budget-bar-fill ${barClass}" style="width:${pct}%"></div></div>
@@ -700,13 +795,14 @@ async function saveClub(recordId, btn) {
         body: JSON.stringify({
             leden: document.getElementById(`leden-${recordId}`).value || 0,
             contributie: document.getElementById(`contributie-${recordId}`).value || 0,
+            betaallink: document.getElementById(`betaallink-${recordId}`).value || "",
         }),
     });
     if (res.status === 403) { checkAdminAccess(); return; }
     await loadAdmin();
 }
 
-// ── Te betalen (admin) ────────────────────────────────────────
+// ─── Te betalen (admin) ───
 function renderToPay(records) {
     const list = document.getElementById("topay-list");
     if (!records.length) {
@@ -782,68 +878,126 @@ async function sepaExportDownload() {
     }
 }
 
-// ── Overview ──────────────────────────────────────────────────
+// ─── Overview ───
+// Homepage: alleen eenvoudige tiles per club
 function renderClubGrid() {
     const grid = document.getElementById("club-grid");
     grid.innerHTML = CLUBS.map(club => {
-        const records = allDeclarations.filter(r => r.fields.Club === club);
-        const rec = clubRecord(club);
-        const leden = rec?.fields.Leden || 0;
-        const tarief = RATES[club] || 0;
-        const kvd = leden * tarief;
-        const contributie = rec?.fields.Contributie || 0;
-        const budget = kvd + contributie;
-        const spent  = clubSpent(club);
-        const pending = records.filter(r => r.fields.Status === "Ingediend").reduce((s, r) => s + (r.fields.Bedrag || 0), 0);
-        const rest   = budget - spent;
-        const pct    = budget > 0 ? Math.min(100, (spent / budget) * 100) : (spent > 0 ? 100 : 0);
-        const barClass = rest < 0 ? "over" : (pct > 80 ? "warn" : "");
-
-        return `<div class="club-card" onclick="showClub('${club.replace(/'/g,"\\'")}')">
-            <div class="club-card-header">
-                <div>
-                    <div class="club-tag">${leden} leden · ${euro(tarief)}/lid</div>
-                    <h2>${club}</h2>
-                </div>
-                <div class="club-decl-count">${records.length} declaratie${records.length !== 1 ? "s" : ""}</div>
-            </div>
-
-            <div class="club-pot-big">
-                <div class="pot-rest ${rest < 0 ? "negative" : ""}">${euro(rest)}</div>
-                <div class="pot-sub">nog beschikbaar</div>
-            </div>
-
-            <div class="club-bar-bg">
-                <div class="club-bar-fill ${barClass}" style="width:${pct.toFixed(1)}%"></div>
-            </div>
-
-            <div class="club-herkomst">
-                <div class="herkomst-row">
-                    <span class="herkomst-label">⛪ Bijdrage KVD (kerk)</span>
-                    <span class="herkomst-val">${euro(kvd)}</span>
-                </div>
-                <div class="herkomst-row">
-                    <span class="herkomst-label">🪙 Opgehaalde contributie</span>
-                    <span class="herkomst-val">${euro(contributie)}</span>
-                </div>
-                <div class="herkomst-row herkomst-totaal">
-                    <span class="herkomst-label">Totaal in de pot</span>
-                    <span class="herkomst-val">${euro(budget)}</span>
-                </div>
-            </div>
-
-            <div class="club-stats-row">
-                <div class="club-stat">
-                    <div class="stat-label">Besteed</div>
-                    <div class="stat-val">${euro(spent)}</div>
-                </div>
-                <div class="club-stat">
-                    <div class="stat-label">Ingediend</div>
-                    <div class="stat-val">${euro(pending)}</div>
-                </div>
-            </div>
+        const aantalDecl = allDeclarations.filter(r => r.fields.Club === club).length;
+        const leden = allLeden.filter(l => l.fields.Club === club);
+        return `<div class="club-tile" onclick="showClub('${club.replace(/'/g,"\\'")}')">
+            <h2>${club}</h2>
+            <div class="tile-meta">${leden.length} lid${leden.length !== 1 ? "eren" : ""} · ${aantalDecl} declaratie${aantalDecl !== 1 ? "s" : ""}</div>
+            <span class="tile-arrow">›</span>
         </div>`;
     }).join("");
+}
+
+// Clubpagina: budgetstatus + leden
+function renderClubStatus(club) {
+    const rec = clubRecord(club);
+    const ledenHandmatig = rec?.fields.Leden || 0;
+    const tarief = RATES[club] || 0;
+    const kvd = ledenHandmatig * tarief;
+    const contributie = rec?.fields.Contributie || 0;
+    const budget = kvd + contributie;
+    const spent = clubSpent(club);
+    const pending = allDeclarations
+        .filter(r => r.fields.Club === club && r.fields.Status === "Ingediend")
+        .reduce((s, r) => s + (r.fields.Bedrag || 0), 0);
+    const rest = budget - spent;
+    const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : (spent > 0 ? 100 : 0);
+    const barClass = rest < 0 ? "over" : (pct > 80 ? "warn" : "");
+
+    document.getElementById("club-status").innerHTML = `<div class="status-card">
+        <div class="club-pot-big">
+            <div class="pot-rest ${rest < 0 ? "negative" : ""}">${euro(rest)}</div>
+            <div class="pot-sub">nog beschikbaar</div>
+        </div>
+        <div class="club-bar-bg"><div class="club-bar-fill ${barClass}" style="width:${pct.toFixed(1)}%"></div></div>
+        <div class="club-herkomst">
+            <div class="herkomst-row">
+                <span class="herkomst-label">⛪ Bijdrage KVD (kerk)</span>
+                <span class="herkomst-val">${euro(kvd)} <span class="herkomst-calc">${ledenHandmatig} × ${euro(tarief)}</span></span>
+            </div>
+            <div class="herkomst-row">
+                <span class="herkomst-label">🪙 Opgehaalde contributie</span>
+                <span class="herkomst-val">${euro(contributie)}</span>
+            </div>
+            <div class="herkomst-row herkomst-totaal">
+                <span class="herkomst-label">Totaal in de pot</span>
+                <span class="herkomst-val">${euro(budget)}</span>
+            </div>
+        </div>
+        <div class="club-stats-row">
+            <div class="club-stat"><div class="stat-label">Besteed</div><div class="stat-val">${euro(spent)}</div></div>
+            <div class="club-stat"><div class="stat-label">Ingediend</div><div class="stat-val">${euro(pending)}</div></div>
+        </div>
+    </div>`;
+}
+
+function renderLeden(club) {
+    const leden = allLeden.filter(l => l.fields.Club === club);
+    const betaald = leden.filter(l => l.fields.Betaald).length;
+    const tarief = RATES[club] || 0;
+    const slug = SLUGS[club];
+
+    document.getElementById("leden-summary").innerHTML = leden.length
+        ? `<strong>${betaald} van ${leden.length}</strong> betaald · ${euro(betaald * tarief)} van ${euro(leden.length * tarief)}`
+        : "";
+
+    const link = `${location.origin}/aanmelden/${slug}`;
+    const linkBlok = `<div class="aanmeld-link">
+        <div>
+            <span class="link-label">Aanmeldlink voor ouders</span>
+            <span class="link-url">${link}</span>
+        </div>
+        <button class="btn-copy" onclick="copyToClipboard(this, '${link}')">Kopieer</button>
+    </div>`;
+
+    const list = document.getElementById("leden-list");
+    if (!leden.length) {
+        list.innerHTML = linkBlok + '<div class="decl-item"><div class="empty-state">Nog geen aanmeldingen.</div></div>';
+        return;
+    }
+
+    list.innerHTML = linkBlok + leden
+        .sort((a, b) => (a.fields["Naam kind"] || "").localeCompare(b.fields["Naam kind"] || ""))
+        .map(l => {
+            const f = l.fields;
+            const badge = f.Betaald
+                ? '<span class="badge badge-goedgekeurd">Betaald</span>'
+                : '<span class="badge badge-ingediend">Nog niet betaald</span>';
+            const knop = isAdminUser
+                ? `<div class="decl-actions">
+                     <button class="${f.Betaald ? "btn-reject" : "btn-approve"}" onclick="toggleLid('${l.id}', ${!f.Betaald}, this)">
+                       ${f.Betaald ? "Markeer als niet betaald" : "✓ Contributie ontvangen"}
+                     </button>
+                   </div>`
+                : "";
+            return `<div class="decl-item compact">
+                <div class="decl-top">
+                    <span class="decl-name">${f["Naam kind"] || "–"} ${badge}</span>
+                    <span class="decl-amount">${euro(tarief)}</span>
+                </div>
+                <div class="decl-meta">t.n.v. ${f.Tenaamstelling || "–"}${f.Aangemeld ? " · aangemeld " + new Date(f.Aangemeld).toLocaleDateString("nl-NL") : ""}</div>
+                ${knop}
+            </div>`;
+        }).join("");
+}
+
+async function toggleLid(recordId, betaald, btn) {
+    btn.disabled = true;
+    btn.textContent = "...";
+    const res = await fetch(`/api/leden/${recordId}/paid`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ betaald }),
+    });
+    if (res.status === 403) { alert("Alleen de beheerder kan dit wijzigen."); return; }
+    await fetchData();
+    renderLeden(currentClub);
+    renderClubStatus(currentClub);
 }
 
 function showClub(club) {
@@ -853,6 +1007,8 @@ function showClub(club) {
     document.getElementById("detail-title").textContent = club;
     document.getElementById("bc").innerHTML = `<a onclick="showOverview()">Overzicht</a> › ${club}`;
     document.getElementById("f-club").value = club;
+    renderClubStatus(club);
+    renderLeden(club);
     renderDeclarations(allDeclarations.filter(r => r.fields.Club === club));
 }
 
@@ -885,7 +1041,7 @@ function renderDeclarations(records) {
     }).join("");
 }
 
-// ── Admin ─────────────────────────────────────────────────────
+// ─── Admin ───
 function renderAdminPending(records) {
     const list = document.getElementById("admin-list");
     if (!records.length) {
@@ -978,7 +1134,7 @@ async function reject(recordId) {
     await loadAdmin();
 }
 
-// ── Betaalkaartje ─────────────────────────────────────────────
+// ─── Betaalkaartje ───
 function payRow(label, value, copyValue) {
     const safe = String(copyValue ?? value).replace(/"/g, "&quot;");
     return `<div class="pay-row">
@@ -1023,7 +1179,7 @@ document.getElementById("qr-overlay").addEventListener("click", e => {
     if (e.target === document.getElementById("qr-overlay")) closeQr();
 });
 
-// ── Declaration form ──────────────────────────────────────────
+// ─── Declaration form ───
 function openModal() {
     document.getElementById("modal-overlay").style.display = "flex";
     document.getElementById("form-status").innerHTML = "";
