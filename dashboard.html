@@ -254,6 +254,52 @@
             font-size: 11px; color: #63858e; background: #f5f3f2;
             border-radius: 4px; padding: 6px 9px; margin-bottom: 10px;
         }
+        /* Bankimport */
+        .import-card {
+            background: #fff; border: 1px solid #dfe5e6; border-radius: 6px;
+            box-shadow: 0 0 4px rgba(0,0,0,0.08); padding: 18px; margin-bottom: 16px;
+        }
+        .import-intro { font-size: 12px; color: #63858e; line-height: 1.6; margin-bottom: 14px; }
+        .import-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .import-row input[type=file] { flex: 1; min-width: 200px; font-size: 12px; }
+        #bank-status { min-height: 18px; margin-top: 10px; font-size: 12px; }
+        .tx-item {
+            background: #fff; border: 1px solid #dfe5e6; border-left-width: 4px;
+            border-radius: 6px; box-shadow: 0 0 4px rgba(0,0,0,0.08);
+            padding: 12px 14px; margin-bottom: 10px;
+        }
+        .tx-item.zeker { border-left-color: #2a7a2a; }
+        .tx-item.hoog { border-left-color: #2a7a2a; }
+        .tx-item.midden { border-left-color: #d98b00; }
+        .tx-item.laag { border-left-color: #c9ccce; }
+        .tx-top { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+        .tx-naam { font-weight: bold; color: #004b58; font-size: 13px; }
+        .tx-bedrag { font-weight: bold; font-size: 14px; white-space: nowrap; }
+        .tx-bedrag.bij { color: #2a7a2a; }
+        .tx-bedrag.af { color: #035765; }
+        .tx-meta { font-size: 11px; color: #92aab0; margin-top: 3px; word-break: break-word; }
+        .tx-match {
+            background: #f5f3f2; border-radius: 4px; padding: 8px 10px;
+            margin-top: 8px; font-size: 12px;
+        }
+        .tx-match label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+        .tx-match input[type=checkbox] { margin-top: 2px; flex-shrink: 0; }
+        .tx-reden { font-size: 11px; color: #63858e; margin-top: 4px; font-style: italic; }
+        .tx-tag {
+            display: inline-block; font-size: 10px; padding: 1px 7px;
+            border-radius: 10px; margin-left: 6px; vertical-align: middle;
+        }
+        .tag-zeker { background: #e6f4e6; color: #2a7a2a; }
+        .tag-hoog { background: #e6f4e6; color: #2a7a2a; }
+        .tag-midden { background: #fdf0d8; color: #8a5d00; }
+        .tag-laag { background: #eeeded; color: #6b6e70; }
+        .tx-waarschuwing { color: #c00; font-size: 11px; margin-top: 4px; }
+        .import-actions {
+            position: sticky; bottom: 0; background: #fff;
+            border: 1px solid #dfe5e6; border-radius: 6px; padding: 12px 14px;
+            display: flex; justify-content: space-between; align-items: center;
+            gap: 10px; flex-wrap: wrap; box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
+        }
         .betaallink-row { margin-bottom: 12px; }
         .betaallink-row label { font-size: 10px; color: #92aab0; display: block; margin-bottom: 3px; }
         .betaallink-row input {
@@ -505,6 +551,21 @@
         <div id="topay-list" class="decl-list">
             <div class="loading">Laden...</div>
         </div>
+
+        <div class="admin-section-title" style="margin-top:32px">Bankafschrift importeren</div>
+        <div class="import-card">
+            <p class="import-intro">
+                Exporteer bij de Rabobank een afschrift als <strong>XML (CAMT.053)</strong> en upload het hier.
+                Uitbetaalde declaraties worden herkend aan de referentie; binnengekomen contributie
+                wordt met AI aan de aangemelde leden gekoppeld. Je ziet eerst een voorstel en bevestigt zelf.
+            </p>
+            <div class="import-row">
+                <input type="file" id="bank-file" accept=".xml,text/xml,application/xml">
+                <button class="btn-primary" onclick="bankImport()" id="bank-import-btn">Analyseren</button>
+            </div>
+            <div id="bank-status"></div>
+        </div>
+        <div id="bank-results"></div>
 
         <div class="admin-section-title" style="margin-top:32px">Alle declaraties</div>
         <div id="admin-all-list" class="decl-list">
@@ -878,6 +939,143 @@ async function sepaExportDownload() {
     }
 }
 
+// ─── Bankimport ───
+let bankTransacties = [];
+
+async function bankImport() {
+    const input = document.getElementById("bank-file");
+    const btn = document.getElementById("bank-import-btn");
+    const status = document.getElementById("bank-status");
+
+    if (!input.files.length) {
+        status.innerHTML = '<span class="error-msg">Kies eerst een XML-bestand.</span>';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "Bezig met analyseren...";
+    status.innerHTML = '<span style="color:#63858e">Het bestand wordt gelezen en de betalingen worden gekoppeld. Dit kan even duren.</span>';
+    document.getElementById("bank-results").innerHTML = "";
+
+    try {
+        const fd = new FormData();
+        fd.append("bestand", input.files[0]);
+        const res = await fetch("/api/bank-import", { method: "POST", body: fd });
+        const data = await res.json();
+
+        if (res.status === 403) { checkAdminAccess(); return; }
+        if (!res.ok) {
+            status.innerHTML = `<span class="error-msg">${data.error || "Import mislukt"}</span>`;
+            return;
+        }
+
+        bankTransacties = data.transacties || [];
+        const gekoppeld = bankTransacties.filter(t => t.doelen.length && !t.alBetaald).length;
+        status.innerHTML = `<span class="success-msg">${bankTransacties.length} boekingen gelezen, ${gekoppeld} met een voorstel.</span>`
+            + (data.aiBeschikbaar ? "" : '<div class="tx-waarschuwing">AI was niet bereikbaar; er is teruggevallen op naamvergelijking. Controleer de voorstellen extra goed.</div>');
+        renderBankResults();
+    } catch {
+        status.innerHTML = '<span class="error-msg">Verbindingsfout tijdens de import.</span>';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "Analyseren";
+    }
+}
+
+function renderBankResults() {
+    const box = document.getElementById("bank-results");
+    if (!bankTransacties.length) {
+        box.innerHTML = '<div class="decl-item"><div class="empty-state">Geen boekingen gevonden in dit bestand.</div></div>';
+        return;
+    }
+
+    const rang = { zeker: 0, hoog: 1, midden: 2, laag: 3 };
+    const gesorteerd = [...bankTransacties].sort((a, b) => (rang[a.zekerheid] ?? 9) - (rang[b.zekerheid] ?? 9));
+
+    box.innerHTML = gesorteerd.map(tx => {
+        const datum = tx.datum ? new Date(tx.datum).toLocaleDateString("nl-NL") : "–";
+        const teken = tx.richting === "bij" ? "+" : "−";
+        const tag = `<span class="tx-tag tag-${tx.zekerheid}">${
+            { zeker: "zeker", hoog: "hoge zekerheid", midden: "controleer", laag: "onzeker" }[tx.zekerheid] || tx.zekerheid
+        }</span>`;
+
+        let matchBlok;
+        if (!tx.doelen.length) {
+            matchBlok = `<div class="tx-match" style="color:#92aab0">Geen koppeling gevonden${
+                tx.richting === "af" ? " — vermoedelijk geen declaratie-uitbetaling." : "."}</div>`;
+        } else if (tx.alBetaald) {
+            matchBlok = `<div class="tx-match" style="color:#63858e">Al verwerkt: ${tx.doelen[0].omschrijving}</div>`;
+        } else {
+            const somKlopt = tx.doelen.every(d => d.bedragKlopt);
+            matchBlok = `<div class="tx-match">
+                ${tx.doelen.map((d, i) => `
+                    <label>
+                        <input type="checkbox" data-tx="${tx.id}" data-doel="${i}" ${
+                            (tx.zekerheid === "zeker" || tx.zekerheid === "hoog") && d.bedragKlopt ? "checked" : ""
+                        }>
+                        <span><strong>${tx.type === "declaratie" ? "Declaratie" : "Contributie"}:</strong>
+                        ${d.omschrijving} (${euro(d.bedrag)})</span>
+                    </label>`).join("")}
+                <div class="tx-reden">${tx.methode === "referentie" ? "Gevonden via referentie" : tx.methode === "ai" ? "Voorstel van de AI" : "Voorstel op basis van naamvergelijking"}: ${tx.reden}</div>
+                ${somKlopt ? "" : '<div class="tx-waarschuwing">Let op: het bedrag komt niet exact overeen.</div>'}
+            </div>`;
+        }
+
+        return `<div class="tx-item ${tx.zekerheid}">
+            <div class="tx-top">
+                <span class="tx-naam">${tx.naam || "(geen naam)"}${tag}</span>
+                <span class="tx-bedrag ${tx.richting}">${teken} ${euro(tx.bedrag)}</span>
+            </div>
+            <div class="tx-meta">${datum}${tx.iban ? " · " + tx.iban : ""}${tx.omschrijving ? " · " + tx.omschrijving : ""}</div>
+            ${matchBlok}
+        </div>`;
+    }).join("");
+
+    box.innerHTML += `<div class="import-actions">
+        <span id="bank-selectie" class="section-sub"></span>
+        <button class="btn-primary" onclick="bankApply(this)">Geselecteerde betalingen verwerken</button>
+    </div>`;
+
+    box.onchange = updateBankSelectie;
+    updateBankSelectie();
+}
+
+function geselecteerdeMatches() {
+    return [...document.querySelectorAll('#bank-results input[type=checkbox]:checked')].map(cb => {
+        const tx = bankTransacties.find(t => t.id === cb.dataset.tx);
+        const doel = tx.doelen[Number(cb.dataset.doel)];
+        return { type: tx.type, recordId: doel.recordId, datum: tx.datum, iban: tx.iban, naam: tx.naam, omschrijving: tx.omschrijving };
+    });
+}
+
+function updateBankSelectie() {
+    const n = geselecteerdeMatches().length;
+    const el = document.getElementById("bank-selectie");
+    if (el) el.textContent = n === 0 ? "Niets geselecteerd" : `${n} betaling${n !== 1 ? "en" : ""} geselecteerd`;
+}
+
+async function bankApply(btn) {
+    const items = geselecteerdeMatches();
+    if (!items.length) { alert("Selecteer eerst minstens een betaling."); return; }
+    if (!confirm(`${items.length} betaling(en) definitief verwerken?`)) return;
+
+    btn.disabled = true;
+    btn.textContent = "Verwerken...";
+    const res = await fetch("/api/bank-apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+    });
+    if (res.status === 403) { checkAdminAccess(); return; }
+    const data = await res.json();
+
+    document.getElementById("bank-status").innerHTML =
+        `<span class="success-msg">Verwerkt: ${data.declaraties} declaratie(s) en ${data.contributies} contributiebetaling(en).</span>`;
+    document.getElementById("bank-results").innerHTML = "";
+    bankTransacties = [];
+    await loadAdmin();
+}
+
 // ─── Overview ───
 // Homepage: alleen eenvoudige tiles per club
 function renderClubGrid() {
@@ -1181,85 +1379,8 @@ document.getElementById("qr-overlay").addEventListener("click", e => {
 
 // ─── Declaration form ───
 function openModal() {
-    document.getElementById("modal-overlay").style.display = "flex";
-    document.getElementById("form-status").innerHTML = "";
-    document.getElementById("decl-form").reset();
-    if (currentClub) document.getElementById("f-club").value = currentClub;
-    document.getElementById("f-datum").value = new Date().toISOString().split("T")[0];
+    document.getElementById("modal-овerlay").style.display = "flex";
 }
-
-function closeModal() {
-    document.getElementById("modal-overlay").style.display = "none";
-}
-
-document.getElementById("modal-overlay").addEventListener("click", e => {
-    if (e.target === document.getElementById("modal-overlay")) closeModal();
-});
-
-// Live IBAN feedback tijdens typen
-document.getElementById("f-iban").addEventListener("input", e => {
-    const input = e.target;
-    const fb = document.getElementById("iban-feedback");
-    const value = input.value.trim();
-    if (!value) {
-        input.style.borderColor = "";
-        fb.innerHTML = "";
-        return;
-    }
-    if (isValidIban(value)) {
-        input.style.borderColor = "#2a7a2a";
-        fb.innerHTML = '<span class="success-msg">✓ Geldig IBAN</span>';
-    } else {
-        input.style.borderColor = "#c00";
-        fb.innerHTML = '<span class="error-msg">Ongeldig IBAN</span>';
-    }
-});
-
-async function submitDeclaration(e) {
-    e.preventDefault();
-    const btn = document.getElementById("submit-btn");
-    const status = document.getElementById("form-status");
-
-    if (!isValidIban(document.getElementById("f-iban").value)) {
-        status.innerHTML = '<span class="error-msg">Controleer het IBAN-nummer.</span>';
-        return;
-    }
-
-    btn.disabled = true;
-    btn.textContent = "Bezig...";
-    status.innerHTML = "";
-
-    try {
-        const res = await fetch("/api/declarations", {
-            method: "POST",
-            body: new FormData(document.getElementById("decl-form"))
-        });
-        const result = await res.json();
-
-        if (res.ok) {
-            status.innerHTML = '<span class="success-msg">Declaratie ingediend!</span>';
-            const all = await fetch("/api/declarations");
-            const data = await all.json();
-            allDeclarations = data.records || [];
-            setTimeout(() => {
-                closeModal();
-                if (currentClub) renderDeclarations(allDeclarations.filter(r => r.fields.Club === currentClub));
-                else renderClubGrid();
-            }, 800);
-        } else {
-            status.innerHTML = `<span class="error-msg">Fout: ${result.error || "Onbekend"}</span>`;
-        }
-    } catch {
-        status.innerHTML = '<span class="error-msg">Verbindingsfout.</span>';
-    } finally {
-        btn.disabled = false;
-        btn.textContent = "Indienen";
-    }
-}
-
-function logout() { window.location.href = "/api/logout"; }
-
-loadAll();
 </script>
 </body>
 </html>
