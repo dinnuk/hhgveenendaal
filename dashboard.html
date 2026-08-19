@@ -1379,8 +1379,85 @@ document.getElementById("qr-overlay").addEventListener("click", e => {
 
 // ─── Declaration form ───
 function openModal() {
-    document.getElementById("modal-овerlay").style.display = "flex";
+    document.getElementById("modal-overlay").style.display = "flex";
+    document.getElementById("form-status").innerHTML = "";
+    document.getElementById("decl-form").reset();
+    if (currentClub) document.getElementById("f-club").value = currentClub;
+    document.getElementById("f-datum").value = new Date().toISOString().split("T")[0];
 }
+
+function closeModal() {
+    document.getElementById("modal-overlay").style.display = "none";
+}
+
+document.getElementById("modal-overlay").addEventListener("click", e => {
+    if (e.target === document.getElementById("modal-overlay")) closeModal();
+});
+
+// Live IBAN feedback tijdens typen
+document.getElementById("f-iban").addEventListener("input", e => {
+    const input = e.target;
+    const fb = document.getElementById("iban-feedback");
+    const value = input.value.trim();
+    if (!value) {
+        input.style.borderColor = "";
+        fb.innerHTML = "";
+        return;
+    }
+    if (isValidIban(value)) {
+        input.style.borderColor = "#2a7a2a";
+        fb.innerHTML = '<span class="success-msg">✓ Geldig IBAN</span>';
+    } else {
+        input.style.borderColor = "#c00";
+        fb.innerHTML = '<span class="error-msg">Ongeldig IBAN</span>';
+    }
+});
+
+async function submitDeclaration(e) {
+    e.preventDefault();
+    const btn = document.getElementById("submit-btn");
+    const status = document.getElementById("form-status");
+
+    if (!isValidIban(document.getElementById("f-iban").value)) {
+        status.innerHTML = '<span class="error-msg">Controleer het IBAN-nummer.</span>';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "Bezig...";
+    status.innerHTML = "";
+
+    try {
+        const res = await fetch("/api/declarations", {
+            method: "POST",
+            body: new FormData(document.getElementById("decl-form"))
+        });
+        const result = await res.json();
+
+        if (res.ok) {
+            status.innerHTML = '<span class="success-msg">Declaratie ingediend!</span>';
+            const all = await fetch("/api/declarations");
+            const data = await all.json();
+            allDeclarations = data.records || [];
+            setTimeout(() => {
+                closeModal();
+                if (currentClub) renderDeclarations(allDeclarations.filter(r => r.fields.Club === currentClub));
+                else renderClubGrid();
+            }, 800);
+        } else {
+            status.innerHTML = `<span class="error-msg">Fout: ${result.error || "Onbekend"}</span>`;
+        }
+    } catch {
+        status.innerHTML = '<span class="error-msg">Verbindingsfout.</span>';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "Indienen";
+    }
+}
+
+function logout() { window.location.href = "/api/logout"; }
+
+loadAll();
 </script>
 </body>
 </html>
