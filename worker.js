@@ -668,7 +668,7 @@ function parseCamt053(xml) {
 function normaliseer(s) {
     return String(s || "")
         .toLowerCase()
-        .normalize("NFD").replace(/[̀-ͯ]/g, "")
+        .normalize("NFD").replace(/\p{Mn}/gu, "")
         .replace(/\b(fam|familie|dhr|mevr|mw|de heer|mevrouw)\b\.?/g, " ")
         .replace(/[^a-z0-9 ]/g, " ")
         .replace(/\s+/g, " ")
@@ -707,13 +707,15 @@ function verifieerMatch(tx, gekozen) {
             .some(w => betalerWoorden.has(w))
     );
 
-    // Geen van beide signalen: het voorstel is niet te onderbouwen, dus verwerpen.
-    if (!bedragKlopt && !naamKlopt) return null;
+    // Het bedrag alleen is geen bewijs: de contributie is per club een vast bedrag,
+    // dus veel ouders maken exact hetzelfde over. Zonder naamovereenkomst verwerpen we
+    // het voorstel, ook als de AI overtuigd klinkt.
+    if (!naamKlopt) return null;
 
     return {
         bedragKlopt,
         naamKlopt,
-        zekerheid: bedragKlopt && naamKlopt ? "hoog" : "midden",
+        zekerheid: bedragKlopt ? "hoog" : "midden",
     };
 }
 
