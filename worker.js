@@ -610,6 +610,335 @@ async function handleRegistration(request, slug, env) {
     });
 }
 
+/* ─── Bankimport (CAMT.053 van de Rabobank) ─── */
+
+const AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+
+function tag(block, name) {
+    const m = block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`));
+    return m ? m[1].trim() : "";
+}
+
+function tagAll(block, name) {
+    const out = [];
+    const re = new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, "g");
+    let m;
+    while ((m = re.exec(block)) !== null) out.push(m[1].trim());
+    return out;
+}
+
+// Rabobank levert CAMT.053; elke boeking is een <Ntry>-blok.
+function parseCamt053(xml) {
+    const entries = tagAll(xml, "Ntry");
+    return entries.map((ntry, i) => {
+        const amountRaw = tag(ntry, "Amt");
+        const bedrag = parseFloat(amountRaw.replace(",", ".")) || 0;
+        const richting = tag(ntry, "CdtDbtInd") === "DBIT" ? "af" : "bij";
+
+        const bookg = tag(ntry, "BookgDt");
+        const datum = (tag(bookg, "Dt") || tag(bookg, "DtTm") || "").slice(0, 10);
+
+        // Tegenpartij: bij inkomend is dat de debiteur, bij uitgaand de crediteur
+        const dbtrNaam = tag(tag(ntry, "Dbtr"), "Nm");
+        const cdtrNaam = tag(tag(ntry, "Cdtr"), "Nm");
+        const namen = tagAll(ntry, "Nm");
+        const naam = (richting === "bij" ? dbtrNaam : cdtrNaam) || namen[0] || "";
+
+        const ibans = tagAll(ntry, "IBAN");
+        const iban = ibans.find(x => x && x !== DEBTOR_IBAN) || "";
+
+        const omschrijving = [
+            ...tagAll(ntry, "Ustrd"),
+            tag(tag(ntry, "Strd"), "Ref"),
+        ].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+
+        return {
+            id: `tx${i}`,
+            datum,
+            bedrag: Math.round(bedrag * 100) / 100,
+            richting,
+            naam,
+            iban,
+            omschrijving,
+            endToEndId: tag(tag(ntry, "Refs"), "EndToEndId"),
+        };
+    }).filter(t => t.bedrag > 0);
+}
+
+function normaliseer(s) {
+    return String(s || "")
+        .toLowerCase()
+        .normalize("NFD").replace(/[̀-ͯ]/g, "")
+        .replace(/\b(fam|familie|dhr|mevr|mw|de heer|mevrouw)\b\.?/g, " ")
+        .replace(/[^a-z0-9 ]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+// Fallback wanneer de AI niet beschikbaar is: naamoverlap + bedrag
+function heuristischeMatch(tx, kandidaten) {
+    const txWoorden = new Set(normaliseer(tx.naam).split(" ").filter(w => w.length > 2));
+    let beste = null;
+    for (const k of kandidaten) {
+        const kWoorden = normaliseer(k.tenaamstelling).split(" ").filter(w => w.length > 2);
+        if (!kWoorden.length) continue;
+        const overlap = kWoorden.filter(w => txWoorden.has(w)).length / kWoorden.length;
+        const bedragOk = Math.abs(tx.bedrag - k.bedrag) < 0.01;
+        const score = overlap * (bedragOk ? 1 : 0.6);
+        if (score > 0.5 && (!beste || score > beste.score)) {
+            beste = { score, lid: k, reden: `Naamovereenkomst met tenaamstelling${bedragOk ? " en bedrag klopt" : ""}` };
+        }
+    }
+    return beste;
+}
+
+// De AI kan een match verzinnen als er geen goede kandidaat is. Daarom controleren
+// we elk voorstel deterministisch op bedrag en naamovereenkomst voordat we het tonen.
+function verifieerMatch(tx, gekozen) {
+    if (!gekozen.length) return null;
+
+    const som = gekozen.reduce((s, l) => s + l.bedrag, 0);
+    const bedragKlopt = Math.abs(som - tx.bedrag) < 0.01;
+
+    const betalerWoorden = new Set(normaliseer(tx.naam).split(" ").filter(w => w.length > 2));
+    const naamKlopt = gekozen.some(l =>
+        normaliseer(l.tenaamstelling).split(" ")
+            .filter(w => w.length > 2)
+            .some(w => betalerWoorden.has(w))
+    );
+
+    // Geen van beide signalen: het voorstel is niet te onderbouwen, dus verwerpen.
+    if (!bedragKlopt && !naamKlopt) return null;
+
+    return {
+        bedragKlopt,
+        naamKlopt,
+        zekerheid: bedragKlopt && naamKlopt ? "hoog" : "midden",
+    };
+}
+
+async function aiMatchContributie(env, tx, kandidaten) {
+    const lijst = kandidaten.map((k, i) =>
+        `${i}. kind="${k.naamKind}" tenaamstelling="${k.tenaamstelling}" club="${k.club}" verwacht=EUR${k.bedrag.toFixed(2)}`
+    ).join("\n");
+
+    const prompt = `Je koppelt een bankbetaling aan openstaande contributies van een kerkelijke jeugdclub.
+
+BETALING
+naam betaler: "${tx.naam}"
+bedrag: EUR ${tx.bedrag.toFixed(2)}
+omschrijving: "${tx.omschrijving}"
+
+OPENSTAANDE CONTRIBUTIES
+${lijst}
+
+Regels:
+- De naam van de betaler hoort bij de "tenaamstelling", niet per se bij de naam van het kind.
+- Een ouder kan in een keer voor meerdere kinderen betalen; het bedrag is dan de som. Geef in dat geval meerdere nummers.
+- Twijfel je, kies dan liever niets dan een gok.
+
+Antwoord met alleen JSON, geen uitleg eromheen:
+{"nummers": [0], "zekerheid": "hoog|midden|laag", "reden": "korte reden"}
+Als er geen match is: {"nummers": [], "zekerheid": "laag", "reden": "geen match"}`;
+
+    const res = await env.AI.run(AI_MODEL, {
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 300,
+        temperature: 0,
+    });
+
+    // Workers AI levert afhankelijk van het model een andere vorm terug
+    const kandidaatTekst = [
+        res?.response,
+        res?.result?.response,
+        res?.choices?.[0]?.message?.content,
+        typeof res === "string" ? res : null,
+    ].find(v => typeof v === "string" && v.trim());
+
+    if (!kandidaatTekst) {
+        throw new Error("Onbekend AI-antwoordformaat: " + JSON.stringify(res).slice(0, 200));
+    }
+
+    const json = kandidaatTekst.match(/\{[\s\S]*\}/);
+    if (!json) throw new Error("AI gaf geen bruikbare JSON: " + kandidaatTekst.slice(0, 150));
+    const parsed = JSON.parse(json[0]);
+
+    // Ontdubbelen: het model herhaalt soms dezelfde kandidaat om het bedrag te laten kloppen
+    const nummers = [...new Set((parsed.nummers || []).filter(n => Number.isInteger(n) && kandidaten[n]))];
+    return {
+        leden: nummers.map(n => kandidaten[n]),
+        zekerheid: parsed.zekerheid || "laag",
+        reden: parsed.reden || "",
+    };
+}
+
+async function bankImport(request, env) {
+    const form = await request.formData();
+    const bestand = form.get("bestand");
+    if (!bestand || !bestand.size) {
+        return new Response(JSON.stringify({ error: "Geen bestand ontvangen" }), {
+            status: 400, headers: { "Content-Type": "application/json" },
+        });
+    }
+
+    const xml = await bestand.text();
+    if (!/<Ntry>/.test(xml)) {
+        return new Response(JSON.stringify({
+            error: "Dit lijkt geen CAMT.053-bestand. Exporteer bij de Rabobank een bij-/afschrift in XML (CAMT.053).",
+        }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const transacties = parseCamt053(xml);
+
+    // Huidige stand uit Airtable
+    const [declRes, ledenRes] = await Promise.all([
+        fetch(`https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(env.AIRTABLE_TABLE_NAME)}`,
+            { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } }),
+        fetch(`https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${LEDEN_TABLE}`,
+            { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } }),
+    ]);
+    const declaraties = (await declRes.json()).records || [];
+    const leden = (await ledenRes.json()).records || [];
+
+    const openstaandeLeden = leden
+        .filter(l => !l.fields.Betaald)
+        .map(l => ({
+            id: l.id,
+            naamKind: l.fields["Naam kind"] || "",
+            tenaamstelling: l.fields.Tenaamstelling || "",
+            club: l.fields.Club || "",
+            bedrag: RATES[l.fields.Club] || 0,
+        }));
+
+    let aiFouten = 0;
+    let aiFoutmelding = null;
+    const resultaten = [];
+
+    for (const tx of transacties) {
+        // Stap 1: exacte match op onze eigen referentie (HHG-JJJJMMDD-XXX)
+        const refMatch = `${tx.omschrijving} ${tx.endToEndId}`.match(/HHG-\d{8}-[A-Z0-9]{3}/);
+        if (refMatch) {
+            const decl = declaraties.find(d => d.fields.Referentie === refMatch[0]);
+            if (decl) {
+                resultaten.push({
+                    ...tx,
+                    type: "declaratie",
+                    zekerheid: "zeker",
+                    methode: "referentie",
+                    reden: `Referentie ${refMatch[0]} gevonden in de omschrijving`,
+                    alBetaald: decl.fields.Status === "Betaald",
+                    doelen: [{
+                        recordId: decl.id,
+                        omschrijving: `${decl.fields.Naam} – ${decl.fields.Club}`,
+                        bedrag: decl.fields.Bedrag,
+                        bedragKlopt: Math.abs((decl.fields.Bedrag || 0) - tx.bedrag) < 0.01,
+                    }],
+                });
+                continue;
+            }
+        }
+
+        // Stap 2: is deze boeking bij een eerdere import al verwerkt?
+        const stempel = `${tx.naam} – ${tx.omschrijving}`.slice(0, 200);
+        const eerder = leden.filter(l => l.fields.Betaald && l.fields.Bankomschrijving === stempel);
+        if (eerder.length) {
+            resultaten.push({
+                ...tx, type: "contributie", zekerheid: "zeker", methode: "eerder",
+                reden: "Deze boeking is bij een eerdere import al verwerkt",
+                alBetaald: true,
+                doelen: eerder.map(l => ({
+                    recordId: l.id,
+                    omschrijving: `${l.fields["Naam kind"]} – ${l.fields.Club}`,
+                    bedrag: RATES[l.fields.Club] || 0,
+                    bedragKlopt: true,
+                })),
+            });
+            continue;
+        }
+
+        // Stap 3: inkomende betaling = waarschijnlijk contributie -> AI
+        if (tx.richting === "bij" && openstaandeLeden.length) {
+            let match = null, methode = "ai";
+            try {
+                match = await aiMatchContributie(env, tx, openstaandeLeden);
+            } catch (e) {
+                aiFouten++;
+                if (!aiFoutmelding) aiFoutmelding = String(e && e.message || e).slice(0, 300);
+                const h = heuristischeMatch(tx, openstaandeLeden);
+                methode = "heuristiek";
+                match = h ? { leden: [h.lid], zekerheid: "midden", reden: h.reden } : null;
+            }
+
+            const controle = match ? verifieerMatch(tx, match.leden) : null;
+            if (controle) {
+                const twijfel = [];
+                if (!controle.bedragKlopt) twijfel.push("het bedrag wijkt af");
+                if (!controle.naamKlopt) twijfel.push("de naam komt niet overeen met de tenaamstelling");
+
+                resultaten.push({
+                    ...tx,
+                    type: "contributie",
+                    // Nooit hoger dan wat de controle rechtvaardigt
+                    zekerheid: controle.zekerheid,
+                    controle: { bedragKlopt: controle.bedragKlopt, naamKlopt: controle.naamKlopt },
+                    methode,
+                    reden: match.reden + (twijfel.length ? ` — let op: ${twijfel.join(" en ")}` : ""),
+                    alBetaald: false,
+                    doelen: match.leden.map(l => ({
+                        recordId: l.id,
+                        omschrijving: `${l.naamKind} – ${l.club}`,
+                        bedrag: l.bedrag,
+                        bedragKlopt: controle.bedragKlopt,
+                    })),
+                });
+                continue;
+            }
+        }
+
+        resultaten.push({
+            ...tx, type: "onbekend", zekerheid: "laag", methode: "geen",
+            reden: "Geen koppeling gevonden", alBetaald: false, doelen: [],
+        });
+    }
+
+    return new Response(JSON.stringify({
+        transacties: resultaten,
+        aiBeschikbaar: aiFouten === 0,
+        aiFoutmelding,
+    }), { headers: { "Content-Type": "application/json" } });
+}
+
+async function bankApply(request, env) {
+    const body = await request.json().catch(() => ({}));
+    const items = Array.isArray(body.items) ? body.items : [];
+    let declaraties = 0, contributies = 0;
+
+    for (const item of items) {
+        const isDecl = item.type === "declaratie";
+        const tabel = isDecl ? encodeURIComponent(env.AIRTABLE_TABLE_NAME) : LEDEN_TABLE;
+        const fields = isDecl
+            ? { Status: "Betaald", "Betaald op": item.datum || null, Banktegenrekening: item.iban || "" }
+            : { Betaald: true, "Betaald op": item.datum || null, Bankomschrijving: `${item.naam} – ${item.omschrijving}`.slice(0, 200) };
+
+        const res = await fetch(
+            `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${tabel}/${item.recordId}`,
+            {
+                method: "PATCH",
+                headers: {
+                    Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ fields, typecast: true }),
+            }
+        );
+        if (res.ok) { isDecl ? declaraties++ : contributies++; }
+    }
+
+    return new Response(JSON.stringify({ success: true, declaraties, contributies }), {
+        headers: { "Content-Type": "application/json" },
+    });
+}
+
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
@@ -684,7 +1013,8 @@ export default {
             const lidMatch = path.match(/^\/api\/leden\/([^/]+)$/);
             const isAdminRoute = approveMatch || rejectMatch || paidMatch || lidPaidMatch ||
                 (lidMatch && request.method === "DELETE") ||
-                (clubMatch && request.method === "POST") || path === "/api/sepa-export";
+                (clubMatch && request.method === "POST") || path === "/api/sepa-export" ||
+                path === "/api/bank-import" || path === "/api/bank-apply";
 
             if (isAdminRoute) {
                 if (!isAdmin(request)) {
@@ -700,6 +1030,8 @@ export default {
                 if (paidMatch && request.method === "POST") return markPaid(paidMatch[1], env);
                 if (clubMatch && request.method === "POST") return updateClub(clubMatch[1], request, env);
                 if (path === "/api/sepa-export" && request.method === "GET") return sepaExport(env);
+                if (path === "/api/bank-import" && request.method === "POST") return bankImport(request, env);
+                if (path === "/api/bank-apply" && request.method === "POST") return bankApply(request, env);
             }
 
             return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
