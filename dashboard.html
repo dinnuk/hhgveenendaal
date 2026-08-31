@@ -752,6 +752,16 @@ function euro(n) {
     return "€ " + Number(n || 0).toFixed(2).replace(".", ",");
 }
 
+/* Namen, omschrijvingen en bankgegevens komen van gebruikers — deels via het
+   publieke aanmeldformulier. Alles wat in innerHTML belandt gaat hier eerst
+   doorheen, anders kan iemand script meesturen dat in het scherm van de
+   penningmeester draait. */
+function esc(v) {
+    return String(v ?? "").replace(/[&<>"']/g, c => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+}
+
 function clubRecord(club) {
     return clubsData.find(c => c.fields.Club === club);
 }
@@ -887,7 +897,7 @@ function renderBudgetGrid() {
             </div>
             <div class="betaallink-row">
                 <label>Rabo-betaallink (ouders zien deze na aanmelding)</label>
-                <input type="url" id="betaallink-${rec?.id}" value="${betaallink}" placeholder="https://betaalverzoek.rabobank.nl/...">
+                <input type="url" id="betaallink-${rec?.id}" value="${esc(betaallink)}" placeholder="https://betaalverzoek.rabobank.nl/...">
             </div>
             <div class="budget-rest ${rest < 0 ? "negative" : ""}">${euro(rest)} <span style="font-size:11px;font-weight:normal;color:#92aab0">in de pot</span></div>
             <div class="budget-bar-bg"><div class="budget-bar-fill ${barClass}" style="width:${pct}%"></div></div>
@@ -927,20 +937,20 @@ function renderToPay(records) {
         const f = r.fields;
         const ibanOk = isValidIban(f.IBAN);
         const ibanLine = ibanOk
-            ? `<div class="decl-iban">${f.IBAN}</div>`
-            : `<div class="decl-iban" style="color:#c00">${f.IBAN || "geen IBAN"} ⚠ ongeldig — wordt overgeslagen in SEPA-export</div>`;
+            ? `<div class="decl-iban">${esc(f.IBAN)}</div>`
+            : `<div class="decl-iban" style="color:#c00">${esc(f.IBAN) || "geen IBAN"} ⚠ ongeldig — wordt overgeslagen in SEPA-export</div>`;
         return `<div class="decl-item">
             <div class="decl-top">
-                <span class="decl-name">${f.Naam || "–"}</span>
+                <span class="decl-name">${esc(f.Naam) || "–"}</span>
                 <span class="decl-amount">${euro(f.Bedrag)}</span>
             </div>
-            <div class="decl-meta">${f.Club || "–"} · <span class="ref-code">${f.Referentie || "–"}</span></div>
+            <div class="decl-meta">${esc(f.Club) || "–"} · <span class="ref-code">${esc(f.Referentie) || "–"}</span></div>
             ${ibanLine}
             <div class="decl-actions">
-                <button class="btn-copy" onclick='showPayment(${JSON.stringify({
+                <button class="btn-copy" onclick='showPayment(${esc(JSON.stringify({
                     naam: f.Naam, iban: f.IBAN, bedrag: f.Bedrag,
                     referentie: f.Referentie, omschrijving: f.Omschrijving, club: f.Club
-                }).replace(/'/g, "&#39;")})'>Betaalgegevens</button>
+                }))})'>Betaalgegevens</button>
                 <button class="btn-paid" onclick="markPaidBtn('${r.id}', this)">✓ Betaald</button>
             </div>
         </div>`;
@@ -1057,7 +1067,7 @@ function renderBankResults() {
             matchBlok = `<div class="tx-match" style="color:#92aab0">Geen koppeling gevonden${
                 tx.richting === "af" ? " — vermoedelijk geen declaratie-uitbetaling." : "."}</div>`;
         } else if (tx.alBetaald) {
-            matchBlok = `<div class="tx-match" style="color:#63858e">Al verwerkt: ${tx.doelen[0].omschrijving}</div>`;
+            matchBlok = `<div class="tx-match" style="color:#63858e">Al verwerkt: ${esc(tx.doelen[0].omschrijving)}</div>`;
         } else {
             const somKlopt = tx.doelen.every(d => d.bedragKlopt);
             matchBlok = `<div class="tx-match">
@@ -1067,19 +1077,19 @@ function renderBankResults() {
                             (tx.zekerheid === "zeker" || tx.zekerheid === "hoog") && d.bedragKlopt ? "checked" : ""
                         }>
                         <span><strong>${tx.type === "declaratie" ? "Declaratie" : "Contributie"}:</strong>
-                        ${d.omschrijving} (${euro(d.bedrag)})</span>
+                        ${esc(d.omschrijving)} (${euro(d.bedrag)})</span>
                     </label>`).join("")}
-                <div class="tx-reden">${tx.methode === "referentie" ? "Gevonden via referentie" : tx.methode === "ai" ? "Voorstel van de AI" : "Voorstel op basis van naamvergelijking"}: ${tx.reden}</div>
+                <div class="tx-reden">${tx.methode === "referentie" ? "Gevonden via referentie" : tx.methode === "ai" ? "Voorstel van de AI" : "Voorstel op basis van naamvergelijking"}: ${esc(tx.reden)}</div>
                 ${somKlopt ? "" : '<div class="tx-waarschuwing">Let op: het bedrag komt niet exact overeen.</div>'}
             </div>`;
         }
 
         return `<div class="tx-item ${tx.zekerheid}">
             <div class="tx-top">
-                <span class="tx-naam">${tx.naam || "(geen naam)"}${tag}</span>
+                <span class="tx-naam">${esc(tx.naam) || "(geen naam)"}${tag}</span>
                 <span class="tx-bedrag ${tx.richting}">${teken} ${euro(tx.bedrag)}</span>
             </div>
-            <div class="tx-meta">${datum}${tx.iban ? " · " + tx.iban : ""}${tx.omschrijving ? " · " + tx.omschrijving : ""}</div>
+            <div class="tx-meta">${datum}${tx.iban ? " · " + esc(tx.iban) : ""}${tx.omschrijving ? " · " + esc(tx.omschrijving) : ""}</div>
             ${matchBlok}
         </div>`;
     }).join("");
@@ -1223,7 +1233,7 @@ function renderLeden(club) {
             if (!inGroep.length) return "";
             const betaaldIn = inGroep.filter(l => l.fields.Betaald).length;
             return `<div class="subgroep-kop">
-                    <span class="subgroep-naam">${g || "Geen leeftijdsgroep"}</span>
+                    <span class="subgroep-naam">${esc(g) || "Geen leeftijdsgroep"}</span>
                     <span class="subgroep-telling">${inGroep.length} lid${inGroep.length !== 1 ? "eren" : ""} · ${betaaldIn} betaald</span>
                 </div>` + inGroep.map(l => lidItem(l, tarief)).join("");
         }).join("");
@@ -1239,7 +1249,7 @@ function geenBewijsVlag(f) {
     if (!f["Bewijs ontbreekt"]) return "";
     const reden = f["Reden geen bewijs"];
     return `<div class="geen-bewijs-vlag">Geen bon of bankafschrift bijgevoegd${
-        reden ? " — " + reden : "."}</div>`;
+        reden ? " — " + esc(reden) : "."}</div>`;
 }
 
 function lidItem(l, tarief) {
@@ -1256,10 +1266,10 @@ function lidItem(l, tarief) {
         : "";
     return `<div class="decl-item compact">
         <div class="decl-top">
-            <span class="decl-name">${f["Naam kind"] || "–"} ${badge}</span>
+            <span class="decl-name">${esc(f["Naam kind"]) || "–"} ${badge}</span>
             <span class="decl-amount">${euro(tarief)}</span>
         </div>
-        <div class="decl-meta">t.n.v. ${f.Tenaamstelling || "–"}${f.Aangemeld ? " · aangemeld " + new Date(f.Aangemeld).toLocaleDateString("nl-NL") : ""}</div>
+        <div class="decl-meta">t.n.v. ${esc(f.Tenaamstelling) || "–"}${f.Aangemeld ? " · aangemeld " + new Date(f.Aangemeld).toLocaleDateString("nl-NL") : ""}</div>
         ${knop}
     </div>`;
 }
@@ -1306,15 +1316,15 @@ function renderDeclarations(records) {
     list.innerHTML = records.sort((a,b) => (b.fields.Datum||"").localeCompare(a.fields.Datum||"")).map(r => {
         const f = r.fields;
         const datum = f.Datum ? new Date(f.Datum).toLocaleDateString("nl-NL") : "–";
-        const badge = `<span class="badge badge-${(f.Status||"Ingediend").toLowerCase()}">${f.Status||"Ingediend"}</span>`;
-        const bonnetje = f.Bonnetje?.length ? ` · <a class="link-bonnetje" href="${f.Bonnetje[0].url}" target="_blank">📎 Bonnetje</a>` : "";
+        const badge = `<span class="badge badge-${esc((f.Status||"Ingediend").toLowerCase())}">${esc(f.Status)||"Ingediend"}</span>`;
+        const bonnetje = f.Bonnetje?.length ? ` · <a class="link-bonnetje" href="${esc(f.Bonnetje[0].url)}" target="_blank">📎 Bonnetje</a>` : "";
         return `<div class="decl-item">
             <div class="decl-top">
-                <span class="decl-name">${f.Naam || "–"} ${badge}</span>
+                <span class="decl-name">${esc(f.Naam) || "–"} ${badge}</span>
                 <span class="decl-amount">${euro(f.Bedrag)}</span>
             </div>
-            <div class="decl-meta">${datum} · ${f.Categorie || "–"}${f.Subgroep ? ' · <span class="subgroep-tag">' + f.Subgroep + "</span>" : ""}${bonnetje}</div>
-            <div class="decl-desc">${f.Omschrijving || ""}</div>
+            <div class="decl-meta">${datum} · ${esc(f.Categorie) || "–"}${f.Subgroep ? ' · <span class="subgroep-tag">' + esc(f.Subgroep) + "</span>" : ""}${bonnetje}</div>
+            <div class="decl-desc">${esc(f.Omschrijving)}</div>
             ${geenBewijsVlag(f)}
         </div>`;
     }).join("");
@@ -1330,18 +1340,18 @@ function renderAdminPending(records) {
     list.innerHTML = records.map(r => {
         const f = r.fields;
         const datum = f.Datum ? new Date(f.Datum).toLocaleDateString("nl-NL") : "–";
-        const bonnetje = f.Bonnetje?.length ? ` · <a class="link-bonnetje" href="${f.Bonnetje[0].url}" target="_blank">📎 Bonnetje</a>` : "";
+        const bonnetje = f.Bonnetje?.length ? ` · <a class="link-bonnetje" href="${esc(f.Bonnetje[0].url)}" target="_blank">📎 Bonnetje</a>` : "";
         const ibanOk = isValidIban(f.IBAN);
         const ibanLine = ibanOk
-            ? `<div class="decl-iban">${f.IBAN}</div>`
-            : `<div class="decl-iban" style="color:#c00">${f.IBAN || "geen IBAN"} ⚠ ongeldig</div>`;
+            ? `<div class="decl-iban">${esc(f.IBAN)}</div>`
+            : `<div class="decl-iban" style="color:#c00">${esc(f.IBAN) || "geen IBAN"} ⚠ ongeldig</div>`;
         return `<div class="decl-item">
             <div class="decl-top">
-                <span class="decl-name">${f.Naam || "–"}</span>
+                <span class="decl-name">${esc(f.Naam) || "–"}</span>
                 <span class="decl-amount">${euro(f.Bedrag)}</span>
             </div>
-            <div class="decl-meta">${f.Club || "–"}${f.Subgroep ? ' <span class="subgroep-tag">' + f.Subgroep + "</span>" : ""} · ${datum} · ${f.Categorie || "–"}${bonnetje}</div>
-            <div class="decl-desc">${f.Omschrijving || ""}</div>
+            <div class="decl-meta">${esc(f.Club) || "–"}${f.Subgroep ? ' <span class="subgroep-tag">' + esc(f.Subgroep) + "</span>" : ""} · ${datum} · ${esc(f.Categorie) || "–"}${bonnetje}</div>
+            <div class="decl-desc">${esc(f.Omschrijving)}</div>
             ${geenBewijsVlag(f)}
             ${ibanLine}
             <div class="decl-actions">
@@ -1361,14 +1371,14 @@ function renderAdminAll(records) {
     list.innerHTML = records.sort((a,b) => (b.fields.Datum||"").localeCompare(a.fields.Datum||"")).map(r => {
         const f = r.fields;
         const datum = f.Datum ? new Date(f.Datum).toLocaleDateString("nl-NL") : "–";
-        const badge = `<span class="badge badge-${(f.Status||"ingediend").toLowerCase()}">${f.Status||"Ingediend"}</span>`;
-        const ref = f.Referentie ? ` · <span class="ref-code">${f.Referentie}</span>` : "";
+        const badge = `<span class="badge badge-${esc((f.Status||"ingediend").toLowerCase())}">${esc(f.Status)||"Ingediend"}</span>`;
+        const ref = f.Referentie ? ` · <span class="ref-code">${esc(f.Referentie)}</span>` : "";
         return `<div class="decl-item compact">
             <div class="decl-top">
-                <span class="decl-name">${f.Naam || "–"} ${badge}</span>
+                <span class="decl-name">${esc(f.Naam) || "–"} ${badge}</span>
                 <span class="decl-amount">${euro(f.Bedrag)}</span>
             </div>
-            <div class="decl-meta">${f.Club || "–"} · ${datum}${ref}</div>
+            <div class="decl-meta">${esc(f.Club) || "–"} · ${datum}${ref}</div>
         </div>`;
     }).join("");
 }
@@ -1418,8 +1428,8 @@ async function reject(recordId) {
 function payRow(label, value, copyValue) {
     const safe = String(copyValue ?? value).replace(/"/g, "&quot;");
     return `<div class="pay-row">
-        <div><span class="pay-label">${label}</span><span class="pay-value">${value}</span></div>
-        <button class="btn-copy" onclick="copyToClipboard(this, &quot;${safe}&quot;)">Kopieer</button>
+        <div><span class="pay-label">${esc(label)}</span><span class="pay-value">${esc(value)}</span></div>
+        <button class="btn-copy" onclick="copyToClipboard(this, &quot;${esc(safe)}&quot;)">Kopieer</button>
     </div>`;
 }
 
@@ -1447,7 +1457,7 @@ function showPayment({ naam, iban, bedrag, referentie, omschrijving, club }) {
         payRow("IBAN", iban) +
         payRow("Bedrag", "€ " + amount.replace(".", ","), amount) +
         payRow("Omschrijving (referentie)", referentie || "–") +
-        `<div class="pay-row"><div><span class="pay-label">Club</span><span class="pay-value">${club || "–"}</span></div></div>`;
+        `<div class="pay-row"><div><span class="pay-label">Club</span><span class="pay-value">${esc(club) || "–"}</span></div></div>`;
     document.getElementById("qr-overlay").style.display = "flex";
 }
 

@@ -197,14 +197,49 @@ async function getDeclarations(env, club) {
     });
 }
 
+const ALLE_CLUBS = Object.values(CLUB_SLUGS);
+const CATEGORIEEN = ["Materiaal", "Eten", "Uitje", "Overig"];
+const MAX_BEDRAG = 5000;
+
+/* Zonder deze controles komt er onzin in de administratie: een negatief bedrag
+   laat de hele SEPA-batch bij de bank stranden, en "abc" of 1e999 maakt van het
+   clubtotaal een onbruikbaar getal. */
+function controleerDeclaratie({ naam, club, bedrag, datum, omschrijving, categorie }) {
+    if (!naam || naam.length < 2 || naam.length > 100) return "Vul een naam in van 2 tot 100 tekens.";
+    if (!ALLE_CLUBS.includes(club)) return "Kies een bestaande club.";
+    if (!CATEGORIEEN.includes(categorie)) return "Kies een bestaande categorie.";
+    if (!omschrijving || omschrijving.length < 3 || omschrijving.length > 1000) {
+        return "Vul een omschrijving in van 3 tot 1000 tekens.";
+    }
+    if (!Number.isFinite(bedrag) || bedrag <= 0) return "Vul een bedrag in dat groter is dan nul.";
+    if (bedrag > MAX_BEDRAG) return `Bedragen boven € ${MAX_BEDRAG} kunnen niet online worden gedeclareerd. Neem contact op met de penningmeester.`;
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(datum || "")) return "Kies een geldige datum.";
+    const d = new Date(datum + "T12:00:00Z");
+    if (Number.isNaN(d.getTime()) || datum !== d.toISOString().slice(0, 10)) return "Kies een geldige datum.";
+    const overmorgen = Date.now() + 2 * 24 * 60 * 60 * 1000;
+    const tweeJaarTerug = Date.now() - 730 * 24 * 60 * 60 * 1000;
+    if (d.getTime() > overmorgen) return "De datum kan niet in de toekomst liggen.";
+    if (d.getTime() < tweeJaarTerug) return "Declaraties ouder dan twee jaar kunnen niet meer worden ingediend.";
+
+    return null;
+}
+
 async function createDeclaration(request, env) {
     const formData = await request.formData();
-    const naam = formData.get("naam");
-    const club = formData.get("club");
-    const bedrag = parseFloat(formData.get("bedrag"));
-    const datum = formData.get("datum");
-    const omschrijving = formData.get("omschrijving");
-    const categorie = formData.get("categorie");
+    const naam = (formData.get("naam") || "").toString().trim();
+    const club = (formData.get("club") || "").toString();
+    const bedrag = Math.round(parseFloat(formData.get("bedrag")) * 100) / 100;
+    const datum = (formData.get("datum") || "").toString().trim();
+    const omschrijving = (formData.get("omschrijving") || "").toString().trim();
+    const categorie = (formData.get("categorie") || "").toString();
+
+    const invoerFout = controleerDeclaratie({ naam, club, bedrag, datum, omschrijving, categorie });
+    if (invoerFout) {
+        return new Response(JSON.stringify({ error: invoerFout }), {
+            status: 400, headers: { "Content-Type": "application/json" },
+        });
+    }
     const iban = (formData.get("iban") || "").trim().replace(/\s+/g, "").toUpperCase();
     const subgroep = (formData.get("subgroep") || "").toString().trim();
     const bonnetje = formData.get("bonnetje");
@@ -258,11 +293,12 @@ async function createDeclaration(request, env) {
     );
 
     if (!createRes.ok) {
-        const err = await createRes.json();
-        return new Response(JSON.stringify({ error: err.error?.message || "Airtable fout" }), {
-            status: 500,
-            headers: { "Content-Type": "application/json" },
-        });
+        // De precieze Airtable-melding is voor de gebruiker onbegrijpelijk en
+        // vertelt bovendien iets over de opbouw achter de schermen.
+        await createRes.text().catch(() => "");
+        return new Response(JSON.stringify({
+            error: "Opslaan is niet gelukt. Probeer het opnieuw of neem contact op met de penningmeester.",
+        }), { status: 500, headers: { "Content-Type": "application/json" } });
     }
 
     const created = await createRes.json();
@@ -837,33 +873,68 @@ function verifieerMatch(tx, gekozen) {
     };
 }
 
-async function aiMatchContributie(env, tx, kandidaten) {
-    const lijst = kandidaten.map((k, i) =>
+/* Cloudflare staat maar een beperkt aantal uitgaande verzoeken per aanroep toe.
+   Eén AI-aanroep per betaling loopt daar bij een normaal maandafschrift tegenaan,
+   waarna de koppeling stilvalt. Daarom behandelen we de betalingen in groepjes. */
+const BETALINGEN_PER_AI_AANROEP = 8;
+const MAX_AI_AANROEPEN = 25;
+const GROEPEN_TEGELIJK = 5;
+
+/* Het model zet er soms uitleg omheen of geeft meerdere objecten terug. Een
+   simpele regex pakt dan te veel; daarom zoeken we het eerste object waarvan
+   de accolades netjes in balans zijn. */
+function leesJson(tekst) {
+    // Het model geeft nu eens een object, dan weer een kale array terug
+    const kandidaten = [tekst.indexOf("{"), tekst.indexOf("[")].filter(i => i !== -1);
+    if (!kandidaten.length) return null;
+    const start = Math.min(...kandidaten);
+    const open = tekst[start];
+    const sluit = open === "{" ? "}" : "]";
+
+    let diep = 0, inString = false, escape = false;
+    for (let i = start; i < tekst.length; i++) {
+        const c = tekst[i];
+        if (escape) { escape = false; continue; }
+        if (c === "\\") { escape = true; continue; }
+        if (c === '"') { inString = !inString; continue; }
+        if (inString) continue;
+        if (c === open) diep++;
+        else if (c === sluit && --diep === 0) {
+            try { return JSON.parse(tekst.slice(start, i + 1)); } catch { return null; }
+        }
+    }
+    return null;
+}
+
+async function aiMatchBatch(env, transacties, kandidaten) {
+    const lijstLeden = kandidaten.map((k, i) =>
         `${i}. kind="${k.naamKind}" tenaamstelling="${k.tenaamstelling}" club="${k.club}" verwacht=EUR${k.bedrag.toFixed(2)}`
     ).join("\n");
 
-    const prompt = `Je koppelt een bankbetaling aan openstaande contributies van een kerkelijke jeugdclub.
+    const lijstBetalingen = transacties.map((t, i) =>
+        `${i}. betaler="${t.naam}" bedrag=EUR${t.bedrag.toFixed(2)} omschrijving="${t.omschrijving}"`
+    ).join("\n");
 
-BETALING
-naam betaler: "${tx.naam}"
-bedrag: EUR ${tx.bedrag.toFixed(2)}
-omschrijving: "${tx.omschrijving}"
+    const prompt = `Je koppelt bankbetalingen aan openstaande contributies van een kerkelijke jeugdclub.
+
+BETALINGEN
+${lijstBetalingen}
 
 OPENSTAANDE CONTRIBUTIES
-${lijst}
+${lijstLeden}
 
 Regels:
 - De naam van de betaler hoort bij de "tenaamstelling", niet per se bij de naam van het kind.
-- Een ouder kan in een keer voor meerdere kinderen betalen; het bedrag is dan de som. Geef in dat geval meerdere nummers.
-- Twijfel je, kies dan liever niets dan een gok.
+- Een ouder kan in een keer voor meerdere kinderen betalen; het bedrag is dan de som. Geef in dat geval meerdere ledennummers.
+- Koppel elk lid aan hoogstens een betaling.
+- Twijfel je, geef dan een lege lijst in plaats van een gok.
 
-Antwoord met alleen JSON, geen uitleg eromheen:
-{"nummers": [0], "zekerheid": "hoog|midden|laag", "reden": "korte reden"}
-Als er geen match is: {"nummers": [], "zekerheid": "laag", "reden": "geen match"}`;
+Antwoord met alleen JSON, geen uitleg eromheen. Geef voor elke betaling een regel:
+{"koppelingen": [{"betaling": 0, "leden": [3], "zekerheid": "hoog|midden|laag", "reden": "korte reden"}]}`;
 
     const res = await env.AI.run(AI_MODEL, {
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 300,
+        max_tokens: 1200,
         temperature: 0,
     });
 
@@ -879,17 +950,27 @@ Als er geen match is: {"nummers": [], "zekerheid": "laag", "reden": "geen match"
         throw new Error("Onbekend AI-antwoordformaat: " + JSON.stringify(res).slice(0, 200));
     }
 
-    const json = kandidaatTekst.match(/\{[\s\S]*\}/);
-    if (!json) throw new Error("AI gaf geen bruikbare JSON: " + kandidaatTekst.slice(0, 150));
-    const parsed = JSON.parse(json[0]);
+    const parsed = leesJson(kandidaatTekst);
+    if (!parsed) throw new Error("AI gaf geen bruikbare JSON: " + kandidaatTekst.slice(0, 150));
 
-    // Ontdubbelen: het model herhaalt soms dezelfde kandidaat om het bedrag te laten kloppen
-    const nummers = [...new Set((parsed.nummers || []).filter(n => Number.isInteger(n) && kandidaten[n]))];
-    return {
-        leden: nummers.map(n => kandidaten[n]),
-        zekerheid: parsed.zekerheid || "laag",
-        reden: parsed.reden || "",
-    };
+    // Antwoord terugleggen op de betalingen; ontbreekt er een, dan geldt "geen match"
+    // Zowel {"koppelingen": [...]} als een kale lijst accepteren
+    const koppelingen = Array.isArray(parsed) ? parsed
+        : Array.isArray(parsed.koppelingen) ? parsed.koppelingen
+        : [];
+
+    const perBetaling = new Map();
+    for (const k of koppelingen) {
+        if (!Number.isInteger(k.betaling) || !transacties[k.betaling]) continue;
+        // Ontdubbelen: het model herhaalt soms een kandidaat om het bedrag te laten kloppen
+        const nummers = [...new Set((k.leden || []).filter(n => Number.isInteger(n) && kandidaten[n]))];
+        perBetaling.set(k.betaling, {
+            leden: nummers.map(n => kandidaten[n]),
+            zekerheid: k.zekerheid || "laag",
+            reden: k.reden || "",
+        });
+    }
+    return transacties.map((_, i) => perBetaling.get(i) || { leden: [], zekerheid: "laag", reden: "geen match" });
 }
 
 async function bankImport(request, env) {
@@ -929,6 +1010,7 @@ async function bankImport(request, env) {
     let aiFouten = 0;
     let aiFoutmelding = null;
     const resultaten = [];
+    const teKoppelen = [];
 
     for (const tx of transacties) {
         // Stap 1: exacte match op onze eigen referentie (HHG-JJJJMMDD-XXX)
@@ -972,48 +1054,90 @@ async function bankImport(request, env) {
             continue;
         }
 
-        // Stap 3: inkomende betaling = waarschijnlijk contributie -> AI
+        // Stap 3: inkomende betaling -> later in groepjes aan de AI voorleggen
         if (tx.richting === "bij" && openstaandeLeden.length) {
-            let match = null, methode = "ai";
-            try {
-                match = await aiMatchContributie(env, tx, openstaandeLeden);
-            } catch (e) {
-                aiFouten++;
-                if (!aiFoutmelding) aiFoutmelding = String(e && e.message || e).slice(0, 300);
-                const h = heuristischeMatch(tx, openstaandeLeden);
-                methode = "heuristiek";
-                match = h ? { leden: [h.lid], zekerheid: "midden", reden: h.reden } : null;
-            }
-
-            const controle = match ? verifieerMatch(tx, match.leden) : null;
-            if (controle) {
-                const twijfel = [];
-                if (!controle.bedragKlopt) twijfel.push("het bedrag wijkt af");
-                if (!controle.naamKlopt) twijfel.push("de naam komt niet overeen met de tenaamstelling");
-
-                resultaten.push({
-                    ...tx,
-                    type: "contributie",
-                    // Nooit hoger dan wat de controle rechtvaardigt
-                    zekerheid: controle.zekerheid,
-                    controle: { bedragKlopt: controle.bedragKlopt, naamKlopt: controle.naamKlopt },
-                    methode,
-                    reden: match.reden + (twijfel.length ? ` — let op: ${twijfel.join(" en ")}` : ""),
-                    alBetaald: false,
-                    doelen: match.leden.map(l => ({
-                        recordId: l.id,
-                        omschrijving: `${l.naamKind} – ${l.club}`,
-                        bedrag: l.bedrag,
-                        bedragKlopt: controle.bedragKlopt,
-                    })),
-                });
-                continue;
-            }
+            teKoppelen.push({ tx, plek: resultaten.length });
         }
-
         resultaten.push({
             ...tx, type: "onbekend", zekerheid: "laag", methode: "geen",
             reden: "Geen koppeling gevonden", alBetaald: false, doelen: [],
+        });
+    }
+
+    // Fase 2: de inkomende betalingen in groepjes voorleggen, zodat we niet
+    // tegen de limiet op uitgaande verzoeken aanlopen bij een groot afschrift.
+    const terugvallen = (groep) => groep.map(({ tx }) => {
+        const h = heuristischeMatch(tx, openstaandeLeden);
+        return h ? { leden: [h.lid], zekerheid: "midden", reden: h.reden } : { leden: [] };
+    });
+
+    // Groepjes maken en die in parallel afhandelen; achtereenvolgens duurt te lang
+    const groepen = [];
+    for (let i = 0; i < teKoppelen.length; i += BETALINGEN_PER_AI_AANROEP) {
+        groepen.push(teKoppelen.slice(i, i + BETALINGEN_PER_AI_AANROEP));
+    }
+
+    const uitkomsten = [];
+    for (let i = 0; i < groepen.length; i += GROEPEN_TEGELIJK) {
+        const parallel = groepen.slice(i, i + GROEPEN_TEGELIJK).map(async (groep, k) => {
+            if (i + k >= MAX_AI_AANROEPEN) {
+                return { groep, antwoorden: terugvallen(groep), methode: "heuristiek" };
+            }
+            try {
+                return {
+                    groep,
+                    antwoorden: await aiMatchBatch(env, groep.map(g => g.tx), openstaandeLeden),
+                    methode: "ai",
+                };
+            } catch (e) {
+                aiFouten++;
+                if (!aiFoutmelding) aiFoutmelding = String(e && e.message || e).slice(0, 300);
+                return { groep, antwoorden: terugvallen(groep), methode: "heuristiek" };
+            }
+        });
+        uitkomsten.push(...(await Promise.all(parallel)));
+    }
+
+    // Pas hierna toewijzen, zodat een lid maar bij een betaling kan horen
+    const alGekoppeld = new Set();
+    for (const { groep, antwoorden, methode } of uitkomsten) {
+        groep.forEach(({ tx, plek }, j) => {
+            let match = antwoorden[j];
+            let gebruikteMethode = methode;
+
+            // Geeft de AI niets terug, dan is naamvergelijking nog een kans;
+            // de controle hieronder blijft hoe dan ook gelden.
+            if (!match || !match.leden.length) {
+                const h = heuristischeMatch(tx, openstaandeLeden);
+                if (!h) return;
+                match = { leden: [h.lid], zekerheid: "midden", reden: h.reden };
+                gebruikteMethode = "heuristiek";
+            }
+
+            const leden = match.leden.filter(l => !alGekoppeld.has(l.id));
+            const controle = verifieerMatch(tx, leden);
+            if (!controle) return;
+            leden.forEach(l => alGekoppeld.add(l.id));
+
+            const twijfel = [];
+            if (!controle.bedragKlopt) twijfel.push("het bedrag wijkt af");
+
+            resultaten[plek] = {
+                ...tx,
+                type: "contributie",
+                // Nooit hoger dan wat de controle rechtvaardigt
+                zekerheid: controle.zekerheid,
+                controle: { bedragKlopt: controle.bedragKlopt, naamKlopt: controle.naamKlopt },
+                methode: gebruikteMethode,
+                reden: (match.reden || "") + (twijfel.length ? ` — let op: ${twijfel.join(" en ")}` : ""),
+                alBetaald: false,
+                doelen: leden.map(l => ({
+                    recordId: l.id,
+                    omschrijving: `${l.naamKind} – ${l.club}`,
+                    bedrag: l.bedrag,
+                    bedragKlopt: controle.bedragKlopt,
+                })),
+            };
         });
     }
 
