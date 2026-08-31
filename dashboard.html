@@ -766,11 +766,22 @@ function clubRecord(club) {
     return clubsData.find(c => c.fields.Club === club);
 }
 
+/* Contributie komt uit twee bronnen: de leden die als betaald zijn afgevinkt,
+   plus wat de penningmeester er handmatig bij zet (contant, giften). Die worden
+   opgeteld, dus een handmatig bedrag voor een lid dat ook is afgevinkt telt dubbel;
+   daarom tonen we de twee bronnen apart. */
+function clubContributie(club) {
+    const leden = allLeden.filter(l => l.fields.Club === club);
+    const betaald = leden.filter(l => l.fields.Betaald);
+    const uitLeden = betaald.length * (RATES[club] || 0);
+    const handmatig = clubRecord(club)?.fields.Contributie || 0;
+    return { handmatig, uitLeden, totaal: handmatig + uitLeden, aantalBetaald: betaald.length, aantalLeden: leden.length };
+}
+
 function clubBudget(club) {
     const rec = clubRecord(club);
     const leden = rec?.fields.Leden || 0;
-    const contributie = rec?.fields.Contributie || 0;
-    return leden * (RATES[club] || 0) + contributie;
+    return leden * (RATES[club] || 0) + clubContributie(club).totaal;
 }
 
 function clubSpent(club) {
@@ -877,12 +888,13 @@ function renderBudgetGrid() {
         const barClass = rest < 0 ? "over" : (pct > 80 ? "warn" : "");
         const clubLeden = allLeden.filter(l => l.fields.Club === club);
         const betaaldCount = clubLeden.filter(l => l.fields.Betaald).length;
+        const contr = clubContributie(club);
         const betaallink = rec?.fields.Betaallink || "";
         return `<div class="budget-card">
             <h3>${club} <span class="budget-rate">(${euro(RATES[club])} p/lid)</span></h3>
             <div class="aanmeld-stat">
                 ${clubLeden.length} aanmelding${clubLeden.length !== 1 ? "en" : ""} via het formulier ·
-                <strong>${betaaldCount} betaald</strong>
+                <strong>${betaaldCount} betaald</strong> = ${euro(contr.uitLeden)} contributie
             </div>
             <div class="budget-inputs">
                 <div>
@@ -890,7 +902,7 @@ function renderBudgetGrid() {
                     <input type="number" min="0" step="1" id="leden-${rec?.id}" value="${leden}">
                 </div>
                 <div>
-                    <label>Contributie opgehaald</label>
+                    <label>Handmatig erbij (contant, gift)</label>
                     <input type="number" min="0" step="0.01" id="contributie-${rec?.id}" value="${contributie}">
                 </div>
                 <button onclick="saveClub('${rec?.id}', this)">Opslaan</button>
@@ -1160,8 +1172,8 @@ function renderClubStatus(club) {
     const ledenHandmatig = rec?.fields.Leden || 0;
     const tarief = RATES[club] || 0;
     const kvd = ledenHandmatig * tarief;
-    const contributie = rec?.fields.Contributie || 0;
-    const budget = kvd + contributie;
+    const contr = clubContributie(club);
+    const budget = kvd + contr.totaal;
     const spent = clubSpent(club);
     const pending = allDeclarations
         .filter(r => r.fields.Club === club && r.fields.Status === "Ingediend")
@@ -1182,9 +1194,13 @@ function renderClubStatus(club) {
                 <span class="herkomst-val">${euro(kvd)} <span class="herkomst-calc">${ledenHandmatig} × ${euro(tarief)}</span></span>
             </div>
             <div class="herkomst-row">
-                <span class="herkomst-label">🪙 Opgehaalde contributie</span>
-                <span class="herkomst-val">${euro(contributie)}</span>
+                <span class="herkomst-label">🪙 Contributie van leden</span>
+                <span class="herkomst-val">${euro(contr.uitLeden)} <span class="herkomst-calc">${contr.aantalBetaald} van ${contr.aantalLeden} betaald</span></span>
             </div>
+            ${contr.handmatig ? `<div class="herkomst-row">
+                <span class="herkomst-label">✏️ Handmatig toegevoegd</span>
+                <span class="herkomst-val">${euro(contr.handmatig)}</span>
+            </div>` : ""}
             <div class="herkomst-row herkomst-totaal">
                 <span class="herkomst-label">Totaal in de pot</span>
                 <span class="herkomst-val">${euro(budget)}</span>
