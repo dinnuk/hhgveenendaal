@@ -1,8 +1,9 @@
 import dashboard from "./dashboard.html";
 
-const PASSWORD = "jeugdwerk";
+// De wachtwoorden staan als secret bij Cloudflare, niet in deze broncode.
+// Ontbreekt een secret, dan lukt inloggen niet — bewust, in plaats van
+// terugvallen op een standaardwaarde die iedereen in de repo kan lezen.
 const COOKIE_NAME = "hhg_auth";
-const ADMIN_PASSWORD = "penningmeester";
 const ADMIN_COOKIE = "hhg_admin";
 const CLUBS_TABLE = "Clubs";
 const LEDEN_TABLE = "Leden";
@@ -78,14 +79,67 @@ const loginPage = `<!DOCTYPE html>
 </body>
 </html>`;
 
-function isAuthenticated(request) {
-    const cookie = request.headers.get("Cookie") || "";
-    return cookie.split(";").some(c => c.trim() === `${COOKIE_NAME}=1`);
+/* Sessies worden ondertekend met een geheim dat alleen de server kent.
+   Een cookie met de hand zetten werkt daardoor niet: zonder geldige
+   handtekening is het token waardeloos. */
+
+const SESSIE_DUUR_MS = 30 * 24 * 60 * 60 * 1000; // 30 dagen
+
+async function ondertekenen(secret, data) {
+    const key = await crypto.subtle.importKey(
+        "raw", new TextEncoder().encode(secret),
+        { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+    );
+    const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
+    return btoa(String.fromCharCode(...new Uint8Array(sig)))
+        .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function isAdmin(request) {
+async function maakSessieToken(env, rol) {
+    const verloopt = Date.now() + SESSIE_DUUR_MS;
+    return `${verloopt}.${await ondertekenen(env.AUTH_SECRET, `${rol}.${verloopt}`)}`;
+}
+
+function leesCookie(request, naam) {
     const cookie = request.headers.get("Cookie") || "";
-    return cookie.split(";").some(c => c.trim() === `${ADMIN_COOKIE}=1`);
+    for (const deel of cookie.split(";")) {
+        const [k, ...rest] = deel.trim().split("=");
+        if (k === naam) return rest.join("=");
+    }
+    return null;
+}
+
+async function geldigeSessie(request, env, rol, cookieNaam) {
+    // Zonder geheim kan niets geverifieerd worden; dan liever iedereen weigeren
+    if (!env.AUTH_SECRET) return false;
+
+    const token = leesCookie(request, cookieNaam);
+    if (!token) return false;
+
+    const scheiding = token.lastIndexOf(".");
+    if (scheiding < 1) return false;
+
+    const verloopt = Number(token.slice(0, scheiding));
+    const handtekening = token.slice(scheiding + 1);
+    if (!Number.isFinite(verloopt) || Date.now() > verloopt) return false;
+
+    const verwacht = await ondertekenen(env.AUTH_SECRET, `${rol}.${verloopt}`);
+    if (handtekening.length !== verwacht.length) return false;
+
+    // Constante-tijdvergelijking, zodat de handtekening niet te raden is
+    let verschil = 0;
+    for (let i = 0; i < handtekening.length; i++) {
+        verschil |= handtekening.charCodeAt(i) ^ verwacht.charCodeAt(i);
+    }
+    return verschil === 0;
+}
+
+function isAuthenticated(request, env) {
+    return geldigeSessie(request, env, "gebruiker", COOKIE_NAME);
+}
+
+function isAdmin(request, env) {
+    return geldigeSessie(request, env, "beheerder", ADMIN_COOKIE);
 }
 
 // ISO 13616 / mod-97 IBAN validatie
@@ -114,17 +168,31 @@ function generateReference() {
     return `HHG-${y}${m}${d}-${rand}`;
 }
 
+/* Airtable geeft maximaal 100 records per pagina terug. Zonder de offset te
+   volgen verdwijnen records zodra een tabel groter wordt dan dat — stil, en
+   juist bij het koppelen van bankbetalingen zou dat misgaan. */
+async function airtableAlles(env, tabel, query = "") {
+    const records = [];
+    let offset = null;
+    do {
+        const url = `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(tabel)}`
+            + `?pageSize=100${query ? "&" + query : ""}${offset ? "&offset=" + encodeURIComponent(offset) : ""}`;
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error?.message || "Airtable fout");
+        records.push(...(data.records || []));
+        offset = data.offset || null;
+    } while (offset);
+    return records;
+}
+
 async function getDeclarations(env, club) {
-    let formula = "";
+    let query = "sort[0][field]=Datum&sort[0][direction]=desc";
     if (club) {
-        formula = `&filterByFormula=({Club}="${club.replace(/"/g, '\\"')}")`;
+        query += `&filterByFormula=${encodeURIComponent(`{Club}="${club.replace(/"/g, '\\"')}"`)}`;
     }
-    const url = `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(env.AIRTABLE_TABLE_NAME)}?sort[0][field]=Datum&sort[0][direction]=desc${formula}`;
-    const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` },
-    });
-    const data = await res.json();
-    return new Response(JSON.stringify(data), {
+    const records = await airtableAlles(env, env.AIRTABLE_TABLE_NAME, query);
+    return new Response(JSON.stringify({ records }), {
         headers: { "Content-Type": "application/json" },
     });
 }
@@ -229,6 +297,26 @@ async function createDeclaration(request, env) {
         if (!uploadRes.ok) {
             const err = await uploadRes.json().catch(() => ({}));
             attachmentWarning = err.error?.message || "Bonnetje uploaden mislukt";
+
+            // De declaratie staat er al, maar zonder bewijs. Hem stil laten staan
+            // zou de bewijsplicht omzeilbaar maken, dus markeren we hem alsnog.
+            await fetch(
+                `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(env.AIRTABLE_TABLE_NAME)}/${recordId}`,
+                {
+                    method: "PATCH",
+                    headers: {
+                        Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        fields: {
+                            "Bewijs ontbreekt": true,
+                            "Reden geen bewijs": `Bijlage kon niet worden opgeslagen (${attachmentWarning}). Vraag de indiener het bewijs opnieuw aan te leveren.`,
+                        },
+                        typecast: true,
+                    }),
+                }
+            );
         }
     }
 
@@ -290,12 +378,8 @@ async function markPaid(recordId, env) {
 }
 
 async function getClubs(env) {
-    const res = await fetch(
-        `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${CLUBS_TABLE}`,
-        { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } }
-    );
-    const data = await res.json();
-    return new Response(JSON.stringify(data), {
+    const records = await airtableAlles(env, CLUBS_TABLE);
+    return new Response(JSON.stringify({ records }), {
         headers: { "Content-Type": "application/json" },
     });
 }
@@ -332,12 +416,11 @@ function xmlEscape(s) {
 
 async function sepaExport(env) {
     // Alle goedgekeurde declaraties ophalen
-    const res = await fetch(
-        `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(env.AIRTABLE_TABLE_NAME)}?filterByFormula=({Status}="Goedgekeurd")`,
-        { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } }
+    const alleRecords = await airtableAlles(
+        env, env.AIRTABLE_TABLE_NAME,
+        `filterByFormula=${encodeURIComponent('{Status}="Goedgekeurd"')}`
     );
-    const data = await res.json();
-    const all = (data.records || []).filter(r => r.fields.Bedrag > 0);
+    const all = alleRecords.filter(r => r.fields.Bedrag > 0);
     const records = all.filter(r => isValidIban(r.fields.IBAN));
     const skipped = all.filter(r => !isValidIban(r.fields.IBAN));
 
@@ -440,11 +523,8 @@ function esc(s) {
 }
 
 async function getLeden(env) {
-    const res = await fetch(
-        `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${LEDEN_TABLE}`,
-        { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } }
-    );
-    return new Response(JSON.stringify(await res.json()), {
+    const records = await airtableAlles(env, LEDEN_TABLE);
+    return new Response(JSON.stringify({ records }), {
         headers: { "Content-Type": "application/json" },
     });
 }
@@ -478,13 +558,8 @@ async function deleteLid(recordId, env) {
 }
 
 async function clubBetaallink(env, club) {
-    const res = await fetch(
-        `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${CLUBS_TABLE}`,
-        { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } }
-    );
-    const data = await res.json();
-    const rec = (data.records || []).find(r => r.fields.Club === club);
-    return rec?.fields.Betaallink || "";
+    const records = await airtableAlles(env, CLUBS_TABLE);
+    return records.find(r => r.fields.Club === club)?.fields.Betaallink || "";
 }
 
 function registrationPage({ club, slug, betaallink, done, naam, error }) {
@@ -836,14 +911,10 @@ async function bankImport(request, env) {
     const transacties = parseCamt053(xml);
 
     // Huidige stand uit Airtable
-    const [declRes, ledenRes] = await Promise.all([
-        fetch(`https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(env.AIRTABLE_TABLE_NAME)}`,
-            { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } }),
-        fetch(`https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${LEDEN_TABLE}`,
-            { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } }),
+    const [declaraties, leden] = await Promise.all([
+        airtableAlles(env, env.AIRTABLE_TABLE_NAME),
+        airtableAlles(env, LEDEN_TABLE),
     ]);
-    const declaraties = (await declRes.json()).records || [];
-    const leden = (await ledenRes.json()).records || [];
 
     const openstaandeLeden = leden
         .filter(l => !l.fields.Betaald)
@@ -1003,7 +1074,7 @@ export default {
         }
 
         if (path.startsWith("/api/")) {
-            if (!isAuthenticated(request)) {
+            if (!(await isAuthenticated(request, env))) {
                 return new Response(JSON.stringify({ error: "Unauthorized" }), {
                     status: 401,
                     headers: { "Content-Type": "application/json" },
@@ -1012,11 +1083,11 @@ export default {
 
             if (path === "/api/admin-login" && request.method === "POST") {
                 const body = await request.json().catch(() => ({}));
-                if (body.password === ADMIN_PASSWORD) {
+                if (env.ADMIN_PASSWORD && body.password === env.ADMIN_PASSWORD) {
                     return new Response(JSON.stringify({ success: true }), {
                         headers: {
                             "Content-Type": "application/json",
-                            "Set-Cookie": `${ADMIN_COOKIE}=1; Path=/; HttpOnly; SameSite=Strict`,
+                            "Set-Cookie": `${ADMIN_COOKIE}=${await maakSessieToken(env, "beheerder")}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=${SESSIE_DUUR_MS / 1000}`,
                         },
                     });
                 }
@@ -1027,7 +1098,7 @@ export default {
             }
 
             if (path === "/api/admin-check" && request.method === "GET") {
-                return new Response(JSON.stringify({ admin: isAdmin(request) }), {
+                return new Response(JSON.stringify({ admin: await isAdmin(request, env) }), {
                     headers: { "Content-Type": "application/json" },
                 });
             }
@@ -1062,7 +1133,7 @@ export default {
                 path === "/api/bank-import" || path === "/api/bank-apply";
 
             if (isAdminRoute) {
-                if (!isAdmin(request)) {
+                if (!(await isAdmin(request, env))) {
                     return new Response(JSON.stringify({ error: "Admin-rechten vereist" }), {
                         status: 403,
                         headers: { "Content-Type": "application/json" },
@@ -1083,7 +1154,7 @@ export default {
         }
 
         if (path === "/dashboard") {
-            if (!isAuthenticated(request)) {
+            if (!(await isAuthenticated(request, env))) {
                 return new Response("", { status: 302, headers: { Location: "/" } });
             }
             return new Response(dashboard, {
@@ -1093,12 +1164,12 @@ export default {
 
         if (request.method === "POST") {
             const body = await request.formData();
-            if (body.get("password") === PASSWORD) {
+            if (env.APP_PASSWORD && body.get("password") === env.APP_PASSWORD) {
                 return new Response("", {
                     status: 302,
                     headers: {
                         Location: "/dashboard",
-                        "Set-Cookie": `${COOKIE_NAME}=1; Path=/; HttpOnly; SameSite=Strict`,
+                        "Set-Cookie": `${COOKIE_NAME}=${await maakSessieToken(env, "gebruiker")}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=${SESSIE_DUUR_MS / 1000}`,
                     },
                 });
             }
@@ -1108,7 +1179,7 @@ export default {
             });
         }
 
-        if (isAuthenticated(request)) {
+        if (await isAuthenticated(request, env)) {
             return new Response("", { status: 302, headers: { Location: "/dashboard" } });
         }
 
