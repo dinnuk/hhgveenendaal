@@ -16,6 +16,11 @@ const CLUB_SLUGS = {
     "tienerclub": "Tienerclub",
     "jv-brea": "JV Brea",
 };
+// De tienerclub is opgesplitst in leeftijdsgroepen. Het blijft een club met
+// een gedeelde pot; de subgroep dient alleen om leden en uitgaven te ordenen.
+const SUBGROEP_CLUB = "Tienerclub";
+const SUBGROEPEN = ["12+", "13+", "14+", "15+"];
+
 const DEBTOR_NAME = "HHG Veenendaal";
 const DEBTOR_IBAN = "NL50RABO0309378133";
 const DEBTOR_BIC = "RABONL2U";
@@ -133,6 +138,7 @@ async function createDeclaration(request, env) {
     const omschrijving = formData.get("omschrijving");
     const categorie = formData.get("categorie");
     const iban = (formData.get("iban") || "").trim().replace(/\s+/g, "").toUpperCase();
+    const subgroep = (formData.get("subgroep") || "").toString().trim();
     const bonnetje = formData.get("bonnetje");
 
     if (!isValidIban(iban)) {
@@ -160,6 +166,7 @@ async function createDeclaration(request, env) {
                     Categorie: categorie,
                     IBAN: iban,
                     Status: "Ingediend",
+                    ...(club === SUBGROEP_CLUB && SUBGROEPEN.includes(subgroep) ? { Subgroep: subgroep } : {}),
                 },
             }),
         }
@@ -490,7 +497,14 @@ function registrationPage({ club, slug, betaallink, done, naam, error }) {
              <label for="tenaamstelling">Tenaamstelling</label>
              <span class="hint">De naam waarop de bankrekening staat waarvan u betaalt, zodat wij uw betaling kunnen herkennen.</span>
              <input type="text" id="tenaamstelling" name="tenaamstelling" required autocomplete="off">
-
+${club === SUBGROEP_CLUB ? `
+             <label for="subgroep">Leeftijdsgroep</label>
+             <span class="hint">De tienerclub komt samen in vier leeftijdsgroepen.</span>
+             <select id="subgroep" name="subgroep" required>
+               <option value="">Kies een groep...</option>
+               ${SUBGROEPEN.map(s => `<option>${s}</option>`).join("\n               ")}
+             </select>
+` : ""}
              <button type="submit">Aanmelden</button>
            </form>`;
 
@@ -517,7 +531,9 @@ function registrationPage({ club, slug, betaallink, done, naam, error }) {
     .hint { display:block; font-size:11px; color:#92aab0; margin-bottom:6px; line-height:1.5; }
     input[type=text] { width:100%; padding:11px 12px; border:1px solid #dfe5e6; border-radius:4px;
                        font-size:15px; margin-bottom:18px; font-family:inherit; }
-    input[type=text]:focus { outline:none; border-color:#63858e; }
+    input[type=text]:focus, select:focus { outline:none; border-color:#63858e; }
+    select { width:100%; padding:11px 12px; border:1px solid #dfe5e6; border-radius:4px;
+             font-size:15px; margin-bottom:18px; font-family:inherit; background:#fff; }
     button { width:100%; background:#004b58; color:#fff; border:none; border-radius:4px;
              padding:13px; font-size:15px; cursor:pointer; }
     button:hover { background:#035765; }
@@ -565,11 +581,20 @@ async function handleRegistration(request, slug, env) {
         const form = await request.formData();
         const naam = (form.get("naam") || "").toString().trim().slice(0, 100);
         const tenaamstelling = (form.get("tenaamstelling") || "").toString().trim().slice(0, 100);
+        const subgroep = (form.get("subgroep") || "").toString().trim();
+        const subgroepVereist = club === SUBGROEP_CLUB;
 
         if (!naam || !tenaamstelling) {
             return new Response(registrationPage({
                 club, slug, betaallink, naam,
-                error: "Vul beide velden in.",
+                error: "Vul alle velden in.",
+            }), { status: 400, headers: { "Content-Type": "text/html; charset=utf-8" } });
+        }
+
+        if (subgroepVereist && !SUBGROEPEN.includes(subgroep)) {
+            return new Response(registrationPage({
+                club, slug, betaallink, naam,
+                error: "Kies een leeftijdsgroep.",
             }), { status: 400, headers: { "Content-Type": "text/html; charset=utf-8" } });
         }
 
@@ -588,6 +613,7 @@ async function handleRegistration(request, slug, env) {
                         Club: club,
                         Betaald: false,
                         Aangemeld: new Date().toISOString().slice(0, 10),
+                        ...(subgroepVereist ? { Subgroep: subgroep } : {}),
                     },
                 }),
             }

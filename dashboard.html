@@ -110,6 +110,20 @@
         .section-sub { font-size: 12px; color: #63858e; }
         .herkomst-calc { font-size: 10px; color: #92aab0; font-weight: normal; margin-left: 4px; }
 
+        /* Leeftijdsgroepen binnen de tienerclub */
+        .subgroep-kop {
+            display: flex; align-items: baseline; justify-content: space-between;
+            gap: 10px; flex-wrap: wrap;
+            margin: 14px 0 2px; padding-bottom: 4px;
+            border-bottom: 1px solid #dfe5e6;
+        }
+        .subgroep-naam { font-weight: bold; color: #004b58; font-size: 13px; }
+        .subgroep-telling { font-size: 11px; color: #92aab0; }
+        .subgroep-tag {
+            display: inline-block; background: #e8f4f0; color: #035765;
+            font-size: 10px; padding: 1px 7px; border-radius: 10px;
+        }
+
         /* Aanmeldlink */
         .aanmeld-link {
             background: #e8f4f0; border: 1px solid #cfe3dd; border-radius: 6px;
@@ -611,6 +625,16 @@
                         <input type="date" id="f-datum" name="datum" required>
                     </div>
                 </div>
+                <div class="form-row" id="row-subgroep" style="display:none">
+                    <label for="f-subgroep">Leeftijdsgroep</label>
+                    <select id="f-subgroep" name="subgroep">
+                        <option value="">Hele tienerclub / niet van toepassing</option>
+                        <option>12+</option>
+                        <option>13+</option>
+                        <option>14+</option>
+                        <option>15+</option>
+                    </select>
+                </div>
                 <div class="form-row">
                     <label for="f-categorie">Categorie *</label>
                     <select id="f-categorie" name="categorie" required>
@@ -678,6 +702,10 @@ const RATES = {
     "Tienerclub": 20,
     "JV Brea": 30,
 };
+
+// De tienerclub is opgesplitst in leeftijdsgroepen, maar houdt een gedeelde pot
+const SUBGROEP_CLUB = "Tienerclub";
+const SUBGROEPEN = ["12+", "13+", "14+", "15+"];
 
 const SLUGS = {
     "Meisjes groep 5 & 6": "meisjes-5-6",
@@ -1159,29 +1187,47 @@ function renderLeden(club) {
         return;
     }
 
-    list.innerHTML = linkBlok + leden
-        .sort((a, b) => (a.fields["Naam kind"] || "").localeCompare(b.fields["Naam kind"] || ""))
-        .map(l => {
-            const f = l.fields;
-            const badge = f.Betaald
-                ? '<span class="badge badge-goedgekeurd">Betaald</span>'
-                : '<span class="badge badge-ingediend">Nog niet betaald</span>';
-            const knop = isAdminUser
-                ? `<div class="decl-actions">
-                     <button class="${f.Betaald ? "btn-reject" : "btn-approve"}" onclick="toggleLid('${l.id}', ${!f.Betaald}, this)">
-                       ${f.Betaald ? "Markeer als niet betaald" : "✓ Contributie ontvangen"}
-                     </button>
-                   </div>`
-                : "";
-            return `<div class="decl-item compact">
-                <div class="decl-top">
-                    <span class="decl-name">${f["Naam kind"] || "–"} ${badge}</span>
-                    <span class="decl-amount">${euro(tarief)}</span>
-                </div>
-                <div class="decl-meta">t.n.v. ${f.Tenaamstelling || "–"}${f.Aangemeld ? " · aangemeld " + new Date(f.Aangemeld).toLocaleDateString("nl-NL") : ""}</div>
-                ${knop}
-            </div>`;
+    const opNaam = (a, b) => (a.fields["Naam kind"] || "").localeCompare(b.fields["Naam kind"] || "");
+
+    // De tienerclub blijft één club met één pot, maar de leden worden
+    // per leeftijdsgroep getoond zodat de leiding ze uit elkaar kan houden.
+    if (club === SUBGROEP_CLUB) {
+        const groepen = [...SUBGROEPEN, null];
+        list.innerHTML = linkBlok + groepen.map(g => {
+            const inGroep = leden.filter(l => (l.fields.Subgroep || null) === g).sort(opNaam);
+            if (!inGroep.length) return "";
+            const betaaldIn = inGroep.filter(l => l.fields.Betaald).length;
+            return `<div class="subgroep-kop">
+                    <span class="subgroep-naam">${g || "Geen leeftijdsgroep"}</span>
+                    <span class="subgroep-telling">${inGroep.length} lid${inGroep.length !== 1 ? "eren" : ""} · ${betaaldIn} betaald</span>
+                </div>` + inGroep.map(l => lidItem(l, tarief)).join("");
         }).join("");
+        return;
+    }
+
+    list.innerHTML = linkBlok + leden.sort(opNaam).map(l => lidItem(l, tarief)).join("");
+}
+
+function lidItem(l, tarief) {
+    const f = l.fields;
+    const badge = f.Betaald
+        ? '<span class="badge badge-goedgekeurd">Betaald</span>'
+        : '<span class="badge badge-ingediend">Nog niet betaald</span>';
+    const knop = isAdminUser
+        ? `<div class="decl-actions">
+             <button class="${f.Betaald ? "btn-reject" : "btn-approve"}" onclick="toggleLid('${l.id}', ${!f.Betaald}, this)">
+               ${f.Betaald ? "Markeer als niet betaald" : "✓ Contributie ontvangen"}
+             </button>
+           </div>`
+        : "";
+    return `<div class="decl-item compact">
+        <div class="decl-top">
+            <span class="decl-name">${f["Naam kind"] || "–"} ${badge}</span>
+            <span class="decl-amount">${euro(tarief)}</span>
+        </div>
+        <div class="decl-meta">t.n.v. ${f.Tenaamstelling || "–"}${f.Aangemeld ? " · aangemeld " + new Date(f.Aangemeld).toLocaleDateString("nl-NL") : ""}</div>
+        ${knop}
+    </div>`;
 }
 
 async function toggleLid(recordId, betaald, btn) {
@@ -1233,7 +1279,7 @@ function renderDeclarations(records) {
                 <span class="decl-name">${f.Naam || "–"} ${badge}</span>
                 <span class="decl-amount">${euro(f.Bedrag)}</span>
             </div>
-            <div class="decl-meta">${datum} · ${f.Categorie || "–"}${bonnetje}</div>
+            <div class="decl-meta">${datum} · ${f.Categorie || "–"}${f.Subgroep ? ' · <span class="subgroep-tag">' + f.Subgroep + "</span>" : ""}${bonnetje}</div>
             <div class="decl-desc">${f.Omschrijving || ""}</div>
         </div>`;
     }).join("");
@@ -1259,7 +1305,7 @@ function renderAdminPending(records) {
                 <span class="decl-name">${f.Naam || "–"}</span>
                 <span class="decl-amount">${euro(f.Bedrag)}</span>
             </div>
-            <div class="decl-meta">${f.Club || "–"} · ${datum} · ${f.Categorie || "–"}${bonnetje}</div>
+            <div class="decl-meta">${f.Club || "–"}${f.Subgroep ? ' <span class="subgroep-tag">' + f.Subgroep + "</span>" : ""} · ${datum} · ${f.Categorie || "–"}${bonnetje}</div>
             <div class="decl-desc">${f.Omschrijving || ""}</div>
             ${ibanLine}
             <div class="decl-actions">
@@ -1384,7 +1430,17 @@ function openModal() {
     document.getElementById("decl-form").reset();
     if (currentClub) document.getElementById("f-club").value = currentClub;
     document.getElementById("f-datum").value = new Date().toISOString().split("T")[0];
+    toonSubgroepVeld();
 }
+
+// De leeftijdsgroep is alleen zinvol bij de tienerclub
+function toonSubgroepVeld() {
+    const isTiener = document.getElementById("f-club").value === SUBGROEP_CLUB;
+    document.getElementById("row-subgroep").style.display = isTiener ? "" : "none";
+    if (!isTiener) document.getElementById("f-subgroep").value = "";
+}
+
+document.getElementById("f-club").addEventListener("change", toonSubgroepVeld);
 
 function closeModal() {
     document.getElementById("modal-overlay").style.display = "none";
