@@ -458,6 +458,20 @@
             display: grid; grid-template-columns: 1fr 1fr;
             gap: 12px; margin-bottom: 14px;
         }
+        .veld-hint {
+            display: block; font-size: 11px; color: #92aab0;
+            font-weight: normal; margin: -2px 0 6px; line-height: 1.5;
+        }
+        .check-regel {
+            display: flex; align-items: flex-start; gap: 8px;
+            margin-top: 10px; font-size: 12px; font-weight: normal;
+            color: #4c4e4f; cursor: pointer;
+        }
+        .check-regel input { width: auto; margin-top: 2px; flex-shrink: 0; }
+        .geen-bewijs-vlag {
+            background: #fdf0d8; color: #8a5d00; border-radius: 4px;
+            padding: 6px 9px; font-size: 11px; margin-top: 6px; line-height: 1.5;
+        }
         .error-msg { color: #c00; font-size: 12px; margin-top: 8px; }
         .success-msg { color: #2a7a2a; font-size: 12px; margin-top: 8px; }
         #form-status { min-height: 20px; }
@@ -655,8 +669,19 @@
                     <div id="iban-feedback"></div>
                 </div>
                 <div class="form-row">
-                    <label for="f-bonnetje">Bonnetje (foto/PDF)</label>
+                    <label for="f-bonnetje">Bewijs van de uitgave *</label>
+                    <span class="veld-hint">Een foto of PDF van de bon. Is de bon er niet meer? Dan mag ook een
+                    kopie of schermafbeelding van de bankbetaling.</span>
                     <input type="file" id="f-bonnetje" name="bonnetje" accept="image/*,.pdf">
+                    <label class="check-regel">
+                        <input type="checkbox" id="f-geen-bewijs" name="geenBewijs" value="true">
+                        <span>Ik heb geen bon én geen kopie van de bankbetaling meer</span>
+                    </label>
+                </div>
+                <div class="form-row" id="row-reden" style="display:none">
+                    <label for="f-reden">Waarom is er geen bewijs? *</label>
+                    <span class="veld-hint">De penningmeester ziet deze declaratie apart gemarkeerd.</span>
+                    <textarea id="f-reden" name="redenGeenBewijs" placeholder="Bijvoorbeeld: contant betaald op de rommelmarkt, bon kwijtgeraakt."></textarea>
                 </div>
                 <div id="form-status"></div>
             </form>
@@ -1208,6 +1233,15 @@ function renderLeden(club) {
     list.innerHTML = linkBlok + leden.sort(opNaam).map(l => lidItem(l, tarief)).join("");
 }
 
+// Declaraties zonder bon of bankafschrift krijgen een zichtbare markering,
+// zodat de penningmeester ze bewust beoordeelt in plaats van ze te missen.
+function geenBewijsVlag(f) {
+    if (!f["Bewijs ontbreekt"]) return "";
+    const reden = f["Reden geen bewijs"];
+    return `<div class="geen-bewijs-vlag">Geen bon of bankafschrift bijgevoegd${
+        reden ? " — " + reden : "."}</div>`;
+}
+
 function lidItem(l, tarief) {
     const f = l.fields;
     const badge = f.Betaald
@@ -1281,6 +1315,7 @@ function renderDeclarations(records) {
             </div>
             <div class="decl-meta">${datum} · ${f.Categorie || "–"}${f.Subgroep ? ' · <span class="subgroep-tag">' + f.Subgroep + "</span>" : ""}${bonnetje}</div>
             <div class="decl-desc">${f.Omschrijving || ""}</div>
+            ${geenBewijsVlag(f)}
         </div>`;
     }).join("");
 }
@@ -1307,6 +1342,7 @@ function renderAdminPending(records) {
             </div>
             <div class="decl-meta">${f.Club || "–"}${f.Subgroep ? ' <span class="subgroep-tag">' + f.Subgroep + "</span>" : ""} · ${datum} · ${f.Categorie || "–"}${bonnetje}</div>
             <div class="decl-desc">${f.Omschrijving || ""}</div>
+            ${geenBewijsVlag(f)}
             ${ibanLine}
             <div class="decl-actions">
                 <button class="btn-approve" onclick="approve('${r.id}', this)">Goedkeuren</button>
@@ -1431,6 +1467,7 @@ function openModal() {
     if (currentClub) document.getElementById("f-club").value = currentClub;
     document.getElementById("f-datum").value = new Date().toISOString().split("T")[0];
     toonSubgroepVeld();
+    toonRedenVeld();
 }
 
 // De leeftijdsgroep is alleen zinvol bij de tienerclub
@@ -1441,6 +1478,17 @@ function toonSubgroepVeld() {
 }
 
 document.getElementById("f-club").addEventListener("change", toonSubgroepVeld);
+
+// Zonder bijlage moet er een toelichting komen; die vragen we pas als het nodig is
+function toonRedenVeld() {
+    const geenBewijs = document.getElementById("f-geen-bewijs").checked;
+    document.getElementById("row-reden").style.display = geenBewijs ? "" : "none";
+    document.getElementById("f-bonnetje").disabled = geenBewijs;
+    if (geenBewijs) document.getElementById("f-bonnetje").value = "";
+    else document.getElementById("f-reden").value = "";
+}
+
+document.getElementById("f-geen-bewijs").addEventListener("change", toonRedenVeld);
 
 function closeModal() {
     document.getElementById("modal-overlay").style.display = "none";
@@ -1476,6 +1524,17 @@ async function submitDeclaration(e) {
 
     if (!isValidIban(document.getElementById("f-iban").value)) {
         status.innerHTML = '<span class="error-msg">Controleer het IBAN-nummer.</span>';
+        return;
+    }
+
+    const geenBewijs = document.getElementById("f-geen-bewijs").checked;
+    const heeftBijlage = document.getElementById("f-bonnetje").files.length > 0;
+    if (!heeftBijlage && !geenBewijs) {
+        status.innerHTML = '<span class="error-msg">Voeg een bon of een kopie van de bankbetaling toe. Heb je die geen van beide meer, vink dat dan aan.</span>';
+        return;
+    }
+    if (geenBewijs && document.getElementById("f-reden").value.trim().length < 10) {
+        status.innerHTML = '<span class="error-msg">Leg kort uit waarom er geen bon of bankafschrift meer is.</span>';
         return;
     }
 

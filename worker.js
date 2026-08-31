@@ -140,12 +140,28 @@ async function createDeclaration(request, env) {
     const iban = (formData.get("iban") || "").trim().replace(/\s+/g, "").toUpperCase();
     const subgroep = (formData.get("subgroep") || "").toString().trim();
     const bonnetje = formData.get("bonnetje");
+    const geenBewijs = formData.get("geenBewijs") === "true";
+    const redenGeenBewijs = (formData.get("redenGeenBewijs") || "").toString().trim().slice(0, 500);
 
     if (!isValidIban(iban)) {
         return new Response(JSON.stringify({ error: "Ongeldig IBAN-nummer" }), {
             status: 400,
             headers: { "Content-Type": "application/json" },
         });
+    }
+
+    // Bewijs is verplicht: een bon, of anders een kopie van de bankbetaling.
+    // Alleen als beide er echt niet meer zijn kan het met een toelichting.
+    const heeftBijlage = bonnetje && bonnetje.size > 0;
+    if (!heeftBijlage && !geenBewijs) {
+        return new Response(JSON.stringify({
+            error: "Voeg een bon of een kopie van de bankbetaling toe. Heb je die geen van beide meer, vink dan aan dat er geen bewijs beschikbaar is.",
+        }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    if (!heeftBijlage && geenBewijs && redenGeenBewijs.length < 10) {
+        return new Response(JSON.stringify({
+            error: "Leg kort uit waarom er geen bon of bankafschrift meer is.",
+        }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
 
     const createRes = await fetch(
@@ -167,6 +183,7 @@ async function createDeclaration(request, env) {
                     IBAN: iban,
                     Status: "Ingediend",
                     ...(club === SUBGROEP_CLUB && SUBGROEPEN.includes(subgroep) ? { Subgroep: subgroep } : {}),
+                    ...(heeftBijlage ? {} : { "Bewijs ontbreekt": true, "Reden geen bewijs": redenGeenBewijs }),
                 },
             }),
         }
